@@ -48,6 +48,12 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # The sim is the game's core maths. Its unit tests (determinism, spread,
+      # the encryption clock, the fog of war) now gate merges the same way
+      # typecheck and lint do.
+      - name: Test
+        run: npm test
+
       # Scan the whole git history for anything that looks like a leaked
       # secret (API keys, tokens, private keys). Pinned to a known gitleaks
       # version so the check is deterministic. --redact keeps any match out
