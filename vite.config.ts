@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 
 // Honour a PORT from the environment (used by preview tooling), fall back to
 // the Vite default. strictPort stays off so a busy port never blocks dev.
@@ -11,5 +11,10 @@ export default defineConfig({
     // default 500kB warning. Expected for a 3D game, so raise the bar
     // rather than silence warnings we would want to hear about.
     chunkSizeWarningLimit: 600,
+  },
+  test: {
+    // The sim is pure logic, so its tests need no DOM.
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
   },
 });

@@ -10,6 +10,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { palette } from '../config/palette';
 import type { NodeType, Topology, TopologyNode } from '../data/topology';
 import { NODE_TYPES } from '../data/topology';
+import type { VisibleState } from '../sim/types';
 import {
   buildEdrMarkerGeometry,
   buildNodeGeometries,
@@ -19,8 +20,10 @@ import {
 const COLOUR_BASE = new THREE.Color(palette.nodeBase);
 const COLOUR_HIGHLIGHT = new THREE.Color(palette.nodeHover);
 const COLOUR_SELECTED = new THREE.Color(palette.nodeSelected);
+const COLOUR_INFECTION = new THREE.Color(palette.infection); // magenta, the threat
+const COLOUR_ENCRYPTED = new THREE.Color('#180a14'); // gone dark, magenta-tinted
 
-const CABLE_HEIGHT = 0.12; // cables run just above the floor, clear of silhouettes
+export const CABLE_HEIGHT = 0.12; // cables run just above the floor, clear of silhouettes
 const CABLE_RADIUS = 0.045;
 const MARKER_GAP = 0.4; // how far an EDR ring floats above a node's top
 
@@ -35,6 +38,10 @@ export interface Board {
   resolveHit(object: THREE.Object3D, instanceId: number | undefined): string | null;
   setHighlight(nodeId: string | null): void;
   setSelected(nodeId: string | null): void;
+  /** Set one node's visible infection state (drives colour and encryption edges). */
+  setVisibleState(nodeId: string, state: VisibleState): void;
+  /** Apply a whole visible view at once (normal play) or true view (debug). */
+  applyView(view: Record<string, VisibleState>): void;
 }
 
 export function createBoard(topology: Topology): Board {
@@ -80,11 +87,23 @@ export function createBoard(topology: Topology): Board {
   group.add(buildEdrMarkers(topology));
   group.add(buildCables(topology));
 
-  // Recolours a single node instance to match its current state.
+  // Magenta wireframe outlines for encrypted nodes, one edge geometry per type
+  // built once and reused. Overlays are created lazily as nodes encrypt.
+  const edgesByType = buildEdgeGeometries(geometries);
+  const edgeMaterial = new THREE.LineBasicMaterial({ color: palette.infection });
+  const encryptionEdges = new Map<string, THREE.LineSegments>();
+
+  // Node state: infection (visible) plus the transient hover/selection.
+  const visibleById = new Map<string, VisibleState>();
   let highlightedId: string | null = null;
   let selectedId: string | null = null;
 
+  // Infection outranks selection and hover for the fill colour: the threat
+  // colour must never be lost to a cursor passing over it.
   function colourFor(nodeId: string): THREE.Color {
+    const visible = visibleById.get(nodeId) ?? 'clean';
+    if (visible === 'encrypted') return COLOUR_ENCRYPTED;
+    if (visible === 'infected') return COLOUR_INFECTION;
     if (nodeId === selectedId) return COLOUR_SELECTED;
     if (nodeId === highlightedId) return COLOUR_HIGHLIGHT;
     return COLOUR_BASE;
@@ -98,6 +117,30 @@ export function createBoard(topology: Topology): Board {
     if (!mesh) return;
     mesh.setColorAt(location.index, colourFor(nodeId));
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }
+
+  // Adds or removes the magenta edge outline for a node as it encrypts.
+  function updateEncryptionEdge(nodeId: string, visible: VisibleState): void {
+    const has = encryptionEdges.has(nodeId);
+    if (visible === 'encrypted' && !has) {
+      const node = topology.byId.get(nodeId);
+      if (!node) return;
+      const outline = new THREE.LineSegments(edgesByType[node.type], edgeMaterial);
+      outline.position.set(node.x, 0, node.z);
+      encryptionEdges.set(nodeId, outline);
+      group.add(outline);
+    } else if (visible !== 'encrypted' && has) {
+      const outline = encryptionEdges.get(nodeId);
+      if (outline) group.remove(outline);
+      encryptionEdges.delete(nodeId);
+    }
+  }
+
+  function setVisibleState(nodeId: string, state: VisibleState): void {
+    if (visibleById.get(nodeId) === state) return;
+    visibleById.set(nodeId, state);
+    updateEncryptionEdge(nodeId, state);
+    repaint(nodeId);
   }
 
   return {
@@ -123,7 +166,20 @@ export function createBoard(topology: Topology): Board {
       repaint(previous);
       repaint(selectedId);
     },
+    setVisibleState,
+    applyView(view) {
+      for (const [nodeId, state] of Object.entries(view)) setVisibleState(nodeId, state);
+    },
   };
+}
+
+// One edge geometry per node type, for the encrypted-node outlines.
+function buildEdgeGeometries(
+  geometries: Record<NodeType, THREE.BufferGeometry>,
+): Record<NodeType, THREE.EdgesGeometry> {
+  const edges = {} as Record<NodeType, THREE.EdgesGeometry>;
+  for (const type of NODE_TYPES) edges[type] = new THREE.EdgesGeometry(geometries[type]);
+  return edges;
 }
 
 // One instanced ring per EDR-covered node, floating a fixed gap above its top.

@@ -9,25 +9,37 @@
   <body>
     <!-- The 3D canvas renders the board. All UI lives in the DOM overlay. -->
 
-    <!-- Top-left: war-room header and the node inspector. -->
+    <!-- Top-left: war-room header, the incident clock and the node inspector. -->
     <div id="hud">
       <div id="hud-title">PATCH TUESDAY</div>
       <div id="hud-subtitle">MERIDIAN MUTUAL // HQ ESTATE</div>
+
+      <div id="hud-clockrow">
+        <span id="hud-clock">T+01h</span>
+        <span id="hud-seed">SEED ----</span>
+      </div>
+      <div id="hud-status">0 / 24 encrypted</div>
 
       <div id="inspector" class="empty" aria-live="polite">
         <div id="inspect-name">No node selected</div>
         <div id="inspect-type"></div>
         <div id="inspect-role">Click a node, or Tab through the asset register.</div>
         <div id="inspect-edr" class="inspect-edr"></div>
+        <div id="inspect-status" class="inspect-status"></div>
         <div id="inspect-connections"></div>
       </div>
 
+      <button id="end-turn" type="button">End turn  ⏎</button>
+
       <div id="overlay-fps">FPS: --</div>
-      <div id="hud-help">drag to pan / wheel to zoom / click or Tab to a node</div>
+      <div id="hud-help">End turn to advance · drag to pan · wheel to zoom · click or Tab a node · press d for debug</div>
     </div>
 
     <!-- Right side: the asset register, the keyboard path onto the board. -->
     <nav id="roster" aria-label="Asset register"></nav>
+
+    <!-- Debug overlay, hidden until toggled with the 'd' key. -->
+    <aside id="debug" aria-hidden="true"></aside>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
