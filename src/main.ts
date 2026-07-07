@@ -33,3 +33,32 @@ function tick(): void {
 }
 
 tick();
+
+// Headless verification hook: renders a burst of frames synchronously and
+// reports the cost per frame. requestAnimationFrame throttles to nothing in
+// hidden or automated windows, so proving the 60fps budget (16.7ms a frame)
+// needs a measurement that does not depend on the compositor.
+declare global {
+  interface Window {
+    __spikeBench: (frames?: number) => {
+      frames: number;
+      msPerFrameAvg: number;
+      msPerFrameWorst: number;
+    };
+  }
+}
+
+window.__spikeBench = (frames = 120) => {
+  const times: number[] = [];
+  for (let i = 0; i < frames; i += 1) {
+    const start = performance.now();
+    spike.renderer.render(spike.scene, spike.camera);
+    times.push(performance.now() - start);
+  }
+  const total = times.reduce((sum, t) => sum + t, 0);
+  return {
+    frames,
+    msPerFrameAvg: Math.round((total / frames) * 100) / 100,
+    msPerFrameWorst: Math.round(Math.max(...times) * 100) / 100,
+  };
+};
