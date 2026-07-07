@@ -1,0 +1,60 @@
+name: CI
+
+# Run on every pull request that targets main, and again on main itself after
+# a merge, so a broken change can never sit unnoticed on the default branch.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# If new commits land on the same branch while a run is in flight, cancel the
+# older run. Saves minutes and always tests the latest code.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The job is named "checks" because branch protection on main requires a
+  # status check with exactly that name. Rename it and every PR stops merging.
+  checks:
+    name: checks
+    runs-on: ubuntu-latest
+    steps:
+      # Pull the repository onto the runner. fetch-depth 0 gets the full git
+      # history so the secret scan can inspect every commit, not just the tip.
+      - name: Check out the code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Install Node 22 (the current LTS) and cache the npm downloads between
+      # runs so installs are fast.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Install exactly what the lockfile pins. Fails if package.json and the
+      # lockfile disagree, which keeps the build reproducible.
+      - name: Install dependencies
+        run: npm ci
+
+      # The same quality gates you run locally, now enforced on every PR.
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # Scan the whole git history for anything that looks like a leaked
+      # secret (API keys, tokens, private keys). Pinned to a known gitleaks
+      # version so the check is deterministic. --redact keeps any match out
+      # of the logs, and --exit-code 1 fails the run if a secret is found.
+      - name: Secret scan (gitleaks)
+        run: |
+          GITLEAKS_VERSION=8.30.1
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks detect --source . --no-banner --redact --exit-code 1
