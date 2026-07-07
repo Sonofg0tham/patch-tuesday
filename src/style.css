@@ -1,0 +1,50 @@
+/* Spike-only styling. The real identity (Chakra Petch, Fira Code, bundled
+   web fonts) lands in Phase 0. Palette is already the decided one. */
+
+:root {
+  --base: #0b0e14;
+  --accent: #4cc9f0;
+  --text: #c5cdd8;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--base);
+}
+
+canvas {
+  display: block;
+}
+
+#overlay {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  padding: 12px 16px;
+  border: 1px solid rgba(76, 201, 240, 0.35);
+  background: rgba(11, 14, 20, 0.85);
+  color: var(--text);
+  font-family: 'Cascadia Code', 'Consolas', 'SF Mono', 'Menlo', monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  pointer-events: none;
+  user-select: none;
+}
+
+#overlay-title {
+  color: var(--accent);
+  letter-spacing: 0.08em;
+}
+
+#overlay-help {
+  opacity: 0.55;
+  font-size: 11px;
+}
