@@ -1,11 +1,7 @@
-/* Spike-only styling. The real identity (Chakra Petch, Fira Code, bundled
-   web fonts) lands in Phase 0. Palette is already the decided one. */
-
-:root {
-  --base: #0b0e14;
-  --accent: #4cc9f0;
-  --text: #c5cdd8;
-}
+/* UI styling. Colours come from src/config/palette.ts, which writes them
+   onto :root as custom properties at boot; the var() fallbacks here mirror
+   those values only so the page never flashes unstyled before the module
+   runs. Fonts are bundled from Fontsource (see CREDITS.md), no CDN. */
 
 * {
   margin: 0;
@@ -17,7 +13,7 @@ html,
 body {
   height: 100%;
   overflow: hidden;
-  background: var(--base);
+  background: var(--base, #0b0e14);
 }
 
 canvas {
@@ -29,10 +25,10 @@ canvas {
   top: 16px;
   left: 16px;
   padding: 12px 16px;
-  border: 1px solid rgba(76, 201, 240, 0.35);
-  background: rgba(11, 14, 20, 0.85);
-  color: var(--text);
-  font-family: 'Cascadia Code', 'Consolas', 'SF Mono', 'Menlo', monospace;
+  border: 1px solid color-mix(in srgb, var(--accent, #4cc9f0) 35%, transparent);
+  background: color-mix(in srgb, var(--base, #0b0e14) 85%, transparent);
+  color: var(--text, #c5cdd8);
+  font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
   font-size: 13px;
   line-height: 1.7;
   pointer-events: none;
@@ -40,7 +36,9 @@ canvas {
 }
 
 #overlay-title {
-  color: var(--accent);
+  color: var(--accent, #4cc9f0);
+  font-family: 'Chakra Petch', 'Segoe UI', sans-serif;
+  font-weight: 600;
   letter-spacing: 0.08em;
 }
 

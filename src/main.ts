@@ -1,10 +1,20 @@
-// Phase -1 spike entry point. Proves the pipeline: Vite + Three.js + strict
-// TypeScript, instanced rendering, shadows, picking, a DOM overlay, and a
-// steady 60fps once deployed. Throwaway quality, kept in the repo.
+// Entry point. Boots the board, the picker and the DOM overlay, and keeps
+// the render loop honest with a live fps readout plus a synchronous
+// benchmark hook for automated verification.
 
-import { createScene, resizeIfNeeded } from './scene';
-import { createPicker } from './picking';
-import { createOverlay } from './overlay';
+// Bundled web fonts (OFL, recorded in CREDITS.md). Vite emits the woff2
+// files into the build, nothing is fetched from a CDN at runtime.
+import '@fontsource/chakra-petch/600.css';
+import '@fontsource/fira-code/400.css';
+import '@fontsource/fira-code/500.css';
+import './ui/style.css';
+
+import { applyPaletteToCss } from './config/palette';
+import { createScene, resizeIfNeeded } from './render/scene';
+import { createPicker } from './render/picking';
+import { createOverlay } from './ui/overlay';
+
+applyPaletteToCss();
 
 const spike = createScene();
 const picker = createPicker(spike);
@@ -48,17 +58,17 @@ declare global {
   }
 }
 
-window.__spikeBench = (frames = 120) => {
+window.__spikeBench = (benchFrames = 120) => {
   const times: number[] = [];
-  for (let i = 0; i < frames; i += 1) {
+  for (let i = 0; i < benchFrames; i += 1) {
     const start = performance.now();
     spike.renderer.render(spike.scene, spike.camera);
     times.push(performance.now() - start);
   }
   const total = times.reduce((sum, t) => sum + t, 0);
   return {
-    frames,
-    msPerFrameAvg: Math.round((total / frames) * 100) / 100,
+    frames: benchFrames,
+    msPerFrameAvg: Math.round((total / benchFrames) * 100) / 100,
     msPerFrameWorst: Math.round(Math.max(...times) * 100) / 100,
   };
 };
