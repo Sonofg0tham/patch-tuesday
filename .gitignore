@@ -4,7 +4,7 @@ dist/
 
 # Environment files. v1 needs no secrets, the rule exists from day one anyway.
 .env
-.env.*
+.env*
 
 # Vercel CLI local project link
 .vercel/
