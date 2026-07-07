@@ -1,26 +1,72 @@
-// Entry point. Boots the board, the picker and the DOM overlay, and keeps
-// the render loop honest with a live fps readout plus a synchronous
-// benchmark hook for automated verification.
+// Entry point. Loads the estate, builds the board, and coordinates the two
+// ways in: the mouse (pointer picking) and the keyboard (the asset register).
+// A single controller merges mouse hover and keyboard focus into one board
+// highlight so the inputs never fight, and keeps selection in sync across the
+// board, the inspector and the register.
 
-// Bundled web fonts (OFL, recorded in CREDITS.md). Vite emits the woff2
-// files into the build, nothing is fetched from a CDN at runtime.
+// Bundled web fonts (OFL, recorded in CREDITS.md). Vite emits the woff2 files
+// into the build, nothing is fetched from a CDN at runtime.
 import '@fontsource/chakra-petch/600.css';
 import '@fontsource/fira-code/400.css';
 import '@fontsource/fira-code/500.css';
 import './ui/style.css';
 
 import { applyPaletteToCss } from './config/palette';
-import { createScene, resizeIfNeeded } from './render/scene';
-import { createPicker } from './render/picking';
+import { loadTopology } from './data/topology';
+import { createScene, resizeIfNeeded, clampPan } from './render/scene';
+import { createBoard } from './render/board';
+import { createPointerPicker } from './render/picking';
 import { createOverlay } from './ui/overlay';
+import { createRoster } from './ui/roster';
 
 applyPaletteToCss();
 
-const spike = createScene();
-const picker = createPicker(spike);
-const overlay = createOverlay();
+const topology = loadTopology();
+const context = createScene(topology);
+const board = createBoard(topology);
+context.scene.add(board.group);
 
-picker.onSelect((index) => overlay.setSelected(index));
+const overlay = createOverlay(topology);
+const rosterContainer = document.getElementById('roster');
+if (!rosterContainer) throw new Error('#roster missing from index.html');
+
+// Highlight = whatever the user is pointing at or has keyboard-focused.
+// Selection = what the user actually chose to inspect. Pointer hover wins
+// over keyboard focus when both are live, so the board tracks the cursor.
+let pointerHover: string | null = null;
+let keyboardFocus: string | null = null;
+
+function refreshHighlight(): void {
+  board.setHighlight(pointerHover ?? keyboardFocus);
+}
+
+function select(nodeId: string | null): void {
+  board.setSelected(nodeId);
+  roster.setActive(nodeId);
+  overlay.inspect(nodeId ? (topology.byId.get(nodeId) ?? null) : null);
+}
+
+const roster = createRoster(rosterContainer, topology, {
+  onFocus(nodeId) {
+    keyboardFocus = nodeId;
+    refreshHighlight();
+  },
+  onActivate(nodeId) {
+    select(nodeId);
+  },
+});
+
+createPointerPicker(context, board, {
+  onHover(nodeId) {
+    pointerHover = nodeId;
+    refreshHighlight();
+  },
+  onClick(nodeId) {
+    select(nodeId);
+  },
+});
+
+overlay.inspect(null);
 
 // Rolling fps: count frames and refresh the readout twice a second.
 let frames = 0;
@@ -28,9 +74,10 @@ let windowStart = performance.now();
 
 function tick(): void {
   requestAnimationFrame(tick);
-  resizeIfNeeded(spike);
-  spike.controls.update();
-  spike.renderer.render(spike.scene, spike.camera);
+  resizeIfNeeded(context);
+  context.controls.update();
+  clampPan(context, topology);
+  context.renderer.render(context.scene, context.camera);
 
   frames += 1;
   const now = performance.now();
@@ -62,7 +109,7 @@ window.__spikeBench = (benchFrames = 120) => {
   const times: number[] = [];
   for (let i = 0; i < benchFrames; i += 1) {
     const start = performance.now();
-    spike.renderer.render(spike.scene, spike.camera);
+    context.renderer.render(context.scene, context.camera);
     times.push(performance.now() - start);
   }
   const total = times.reduce((sum, t) => sum + t, 0);

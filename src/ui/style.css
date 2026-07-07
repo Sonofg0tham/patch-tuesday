@@ -1,7 +1,7 @@
-/* UI styling. Colours come from src/config/palette.ts, which writes them
-   onto :root as custom properties at boot; the var() fallbacks here mirror
-   those values only so the page never flashes unstyled before the module
-   runs. Fonts are bundled from Fontsource (see CREDITS.md), no CDN. */
+/* UI styling. Colours come from src/config/palette.ts, which writes them onto
+   :root as custom properties at boot; the var() fallbacks here mirror those
+   values only so the page never flashes unstyled before the module runs.
+   Fonts are bundled from Fontsource (see CREDITS.md), no CDN. */
 
 * {
   margin: 0;
@@ -14,35 +14,219 @@ body {
   height: 100%;
   overflow: hidden;
   background: var(--base, #0b0e14);
+  color: var(--text, #c5cdd8);
+  font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
 }
 
 canvas {
   display: block;
 }
 
-#overlay {
+/* Shared panel look: framed cyan glass against the near-black board. */
+#hud,
+#roster {
   position: fixed;
+  border: 1px solid color-mix(in srgb, var(--accent, #4cc9f0) 32%, transparent);
+  background: color-mix(in srgb, var(--base, #0b0e14) 82%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+/* Top-left header and inspector. */
+#hud {
   top: 16px;
   left: 16px;
-  padding: 12px 16px;
-  border: 1px solid color-mix(in srgb, var(--accent, #4cc9f0) 35%, transparent);
-  background: color-mix(in srgb, var(--base, #0b0e14) 85%, transparent);
-  color: var(--text, #c5cdd8);
-  font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  padding: 14px 16px;
   font-size: 13px;
-  line-height: 1.7;
-  pointer-events: none;
-  user-select: none;
+  line-height: 1.6;
 }
 
-#overlay-title {
-  color: var(--accent, #4cc9f0);
+#hud-title {
   font-family: 'Chakra Petch', 'Segoe UI', sans-serif;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  font-size: 20px;
+  letter-spacing: 0.1em;
+  color: var(--accent, #4cc9f0);
 }
 
-#overlay-help {
-  opacity: 0.55;
+#hud-subtitle {
   font-size: 11px;
+  letter-spacing: 0.14em;
+  opacity: 0.65;
+  margin-bottom: 12px;
+}
+
+#inspector {
+  border-top: 1px solid color-mix(in srgb, var(--accent, #4cc9f0) 20%, transparent);
+  padding-top: 10px;
+  min-height: 96px;
+}
+
+#inspector.empty {
+  opacity: 0.7;
+}
+
+#inspect-name {
+  font-family: 'Chakra Petch', 'Segoe UI', sans-serif;
+  font-weight: 600;
+  font-size: 16px;
+  letter-spacing: 0.06em;
+  color: var(--accent, #4cc9f0);
+}
+
+#inspect-type {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+#inspect-role {
+  margin: 6px 0;
+}
+
+.inspect-edr {
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+/* EDR state carries a glyph as well as a word, so it is never colour alone. */
+.inspect-edr.on {
+  color: var(--accent, #4cc9f0);
+}
+
+.inspect-edr.on::before {
+  content: '\25C9  '; /* fisheye: watched */
+}
+
+.inspect-edr.off {
+  color: var(--text, #c5cdd8);
+}
+
+.inspect-edr.off::before {
+  content: '\25CB  '; /* hollow circle: a gap */
+}
+
+#inspect-connections {
+  margin-top: 6px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+#overlay-fps {
+  margin-top: 12px;
+  font-size: 12px;
+  opacity: 0.55;
+}
+
+#hud-help {
+  font-size: 11px;
+  opacity: 0.45;
+}
+
+/* Right-side asset register: the keyboard path onto the board. */
+#roster {
+  top: 16px;
+  right: 16px;
+  bottom: 16px;
+  width: 210px;
+  padding: 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.roster-heading {
+  font-family: 'Chakra Petch', 'Segoe UI', sans-serif;
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent, #4cc9f0);
+  opacity: 0.7;
+  margin: 10px 0 4px;
+}
+
+.roster-section:first-child .roster-heading {
+  margin-top: 0;
+}
+
+.roster-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text, #c5cdd8);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.roster-item:hover {
+  border-color: color-mix(in srgb, var(--accent, #4cc9f0) 40%, transparent);
+}
+
+.roster-item:focus-visible {
+  outline: 2px solid var(--accent, #4cc9f0);
+  outline-offset: 1px;
+}
+
+.roster-item[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--accent, #4cc9f0) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent, #4cc9f0) 55%, transparent);
+}
+
+.roster-name {
+  letter-spacing: 0.03em;
+}
+
+.roster-edr {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* EDR state in the register also carries a glyph, not just position. */
+.roster-edr.on {
+  color: var(--accent, #4cc9f0);
+}
+
+.roster-edr.on::before {
+  content: '\25C9 ';
+}
+
+.roster-edr.off {
+  opacity: 0.5;
+}
+
+.roster-edr.off::before {
+  content: '\25CB ';
+}
+
+/* On narrow screens the register drops to the bottom as a short strip so the
+   board keeps the room. Phase 1 is desktop-first; touch is out of scope. */
+@media (max-width: 720px) {
+  #roster {
+    top: auto;
+    left: 16px;
+    right: 16px;
+    width: auto;
+    height: 132px;
+    bottom: 16px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 4px 10px;
+  }
+
+  #hud {
+    width: 260px;
+  }
 }

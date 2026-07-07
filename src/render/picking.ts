@@ -1,63 +1,46 @@
-// Raycaster picking against the instanced grid: hover brightens a box,
-// click selects it. Instance colours are rewritten only when a state
-// actually changes, never per frame.
+// Pointer picking against the board's node meshes. This module only reports
+// which node is under the cursor or was clicked; it does not colour anything.
+// main.ts coordinates mouse hover and keyboard focus into a single highlight
+// so the two input methods never fight over the board.
 
 import * as THREE from 'three';
-import {
-  COLOUR_BASE,
-  COLOUR_HOVER,
-  COLOUR_SELECTED,
-  type SpikeScene,
-} from './scene';
+import type { Board } from './board';
+import type { SceneContext } from './scene';
 
-export interface Picker {
-  /** Index of the currently selected box, or null. */
-  readonly selected: number | null;
-  /** Register a callback for when the selection changes. */
-  onSelect(callback: (index: number | null) => void): void;
+export interface PickerHandlers {
+  onHover(nodeId: string | null): void;
+  onClick(nodeId: string | null): void;
 }
 
-export function createPicker(spike: SpikeScene): Picker {
+export function createPointerPicker(
+  context: SceneContext,
+  board: Board,
+  handlers: PickerHandlers,
+): void {
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
-  let hovered: number | null = null;
-  let selected: number | null = null;
-  let selectCallback: (index: number | null) => void = () => {};
-  // Distinguish a click from a pan drag: a drag beyond a few pixels
-  // must not change the selection.
+  const canvas = context.renderer.domElement;
+  let hovered: string | null = null;
+  // Distinguish a click from a pan drag: a drag beyond a few pixels must not
+  // change the selection.
   let downX = 0;
   let downY = 0;
 
-  function colourFor(index: number): THREE.Color {
-    if (index === selected) return COLOUR_SELECTED;
-    if (index === hovered) return COLOUR_HOVER;
-    return COLOUR_BASE;
-  }
-
-  function applyColour(index: number | null): void {
-    if (index === null) return;
-    spike.grid.setColorAt(index, colourFor(index));
-    if (spike.grid.instanceColor) spike.grid.instanceColor.needsUpdate = true;
-  }
-
-  function pick(clientX: number, clientY: number): number | null {
+  function pick(clientX: number, clientY: number): string | null {
     pointer.x = (clientX / window.innerWidth) * 2 - 1;
     pointer.y = -(clientY / window.innerHeight) * 2 + 1;
-    raycaster.setFromCamera(pointer, spike.camera);
-    const hit = raycaster.intersectObject(spike.grid, false)[0];
-    return hit?.instanceId ?? null;
+    raycaster.setFromCamera(pointer, context.camera);
+    const hit = raycaster.intersectObjects(board.nodeMeshes, false)[0];
+    if (!hit) return null;
+    return board.resolveHit(hit.object, hit.instanceId);
   }
-
-  const canvas = spike.renderer.domElement;
 
   canvas.addEventListener('pointermove', (event) => {
     const next = pick(event.clientX, event.clientY);
     if (next === hovered) return;
-    const previous = hovered;
     hovered = next;
-    applyColour(previous);
-    applyColour(hovered);
     canvas.style.cursor = hovered === null ? 'default' : 'pointer';
+    handlers.onHover(hovered);
   });
 
   canvas.addEventListener('pointerdown', (event) => {
@@ -67,22 +50,7 @@ export function createPicker(spike: SpikeScene): Picker {
 
   canvas.addEventListener('pointerup', (event) => {
     const moved = Math.hypot(event.clientX - downX, event.clientY - downY);
-    if (moved > 4) return;
-    const next = pick(event.clientX, event.clientY);
-    if (next === selected) return;
-    const previous = selected;
-    selected = next;
-    applyColour(previous);
-    applyColour(selected);
-    selectCallback(selected);
+    if (moved > 4) return; // this was a pan, not a click
+    handlers.onClick(pick(event.clientX, event.clientY));
   });
-
-  return {
-    get selected() {
-      return selected;
-    },
-    onSelect(callback) {
-      selectCallback = callback;
-    },
-  };
 }

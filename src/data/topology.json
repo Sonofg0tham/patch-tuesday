@@ -1,0 +1,62 @@
+{
+  "name": "MERIDIAN MUTUAL // HQ ESTATE",
+  "grid": { "spacing": 2.2 },
+  "nodes": [
+    { "id": "DC-01", "label": "DC-01", "type": "domain-controller", "role": "Active Directory domain controller", "col": 4, "row": 0, "edr": true },
+
+    { "id": "SRV-MAIL", "label": "SRV-MAIL", "type": "server", "role": "Exchange mail server", "col": 2, "row": 1, "edr": true },
+    { "id": "SRV-SQL", "label": "SRV-SQL", "type": "server", "role": "SQL Server database", "col": 3, "row": 1, "edr": true },
+    { "id": "SRV-APP", "label": "SRV-APP", "type": "server", "role": "Line-of-business app server", "col": 4, "row": 1, "edr": true },
+    { "id": "SRV-WEB", "label": "SRV-WEB", "type": "server", "role": "IIS web server", "col": 5, "row": 1, "edr": true },
+    { "id": "SRV-FILE", "label": "SRV-FILE", "type": "server", "role": "Windows file server", "col": 6, "row": 1, "edr": true },
+
+    { "id": "CORE-RTR", "label": "CORE-RTR", "type": "router", "role": "Core switch", "col": 4, "row": 2, "edr": true },
+    { "id": "BACKUP-01", "label": "BACKUP-01", "type": "backup", "role": "Veeam backup repository", "col": 7, "row": 2, "edr": true },
+
+    { "id": "FIN-SW", "label": "FIN-SW", "type": "router", "role": "Finance segment switch", "col": 2, "row": 3, "edr": false },
+    { "id": "OPS-SW", "label": "OPS-SW", "type": "router", "role": "Operations segment switch", "col": 6, "row": 3, "edr": false },
+
+    { "id": "FINANCE-01", "label": "FINANCE-01", "type": "workstation", "role": "Finance workstation", "col": 1, "row": 4, "edr": true },
+    { "id": "FINANCE-02", "label": "FINANCE-02", "type": "workstation", "role": "Finance workstation", "col": 2, "row": 4, "edr": false },
+    { "id": "FINANCE-03", "label": "FINANCE-03", "type": "workstation", "role": "Finance workstation", "col": 3, "row": 4, "edr": false },
+    { "id": "HR-11", "label": "HR-11", "type": "workstation", "role": "HR workstation", "col": 0, "row": 5, "edr": true },
+    { "id": "HR-12", "label": "HR-12", "type": "workstation", "role": "HR workstation", "col": 1, "row": 5, "edr": false },
+    { "id": "LEGAL-06", "label": "LEGAL-06", "type": "workstation", "role": "Legal workstation", "col": 2, "row": 5, "edr": false },
+    { "id": "RECEP-01", "label": "RECEP-01", "type": "workstation", "role": "Reception workstation", "col": 3, "row": 5, "edr": false },
+
+    { "id": "DEV-04", "label": "DEV-04", "type": "workstation", "role": "Developer workstation", "col": 5, "row": 4, "edr": true },
+    { "id": "DEV-05", "label": "DEV-05", "type": "workstation", "role": "Developer workstation", "col": 6, "row": 4, "edr": true },
+    { "id": "SALES-07", "label": "SALES-07", "type": "workstation", "role": "Sales workstation", "col": 7, "row": 4, "edr": false },
+    { "id": "SALES-08", "label": "SALES-08", "type": "workstation", "role": "Sales workstation", "col": 8, "row": 4, "edr": false },
+    { "id": "IT-09", "label": "IT-09", "type": "workstation", "role": "IT admin workstation", "col": 5, "row": 5, "edr": true },
+    { "id": "EXEC-01", "label": "EXEC-01", "type": "workstation", "role": "Executive workstation", "col": 6, "row": 5, "edr": true },
+    { "id": "MKTG-03", "label": "MKTG-03", "type": "workstation", "role": "Marketing workstation", "col": 7, "row": 5, "edr": false }
+  ],
+  "cables": [
+    ["CORE-RTR", "DC-01"],
+    ["CORE-RTR", "SRV-MAIL"],
+    ["CORE-RTR", "SRV-SQL"],
+    ["CORE-RTR", "SRV-APP"],
+    ["CORE-RTR", "SRV-WEB"],
+    ["CORE-RTR", "SRV-FILE"],
+    ["CORE-RTR", "BACKUP-01"],
+    ["CORE-RTR", "FIN-SW"],
+    ["CORE-RTR", "OPS-SW"],
+
+    ["FIN-SW", "FINANCE-01"],
+    ["FIN-SW", "FINANCE-02"],
+    ["FIN-SW", "FINANCE-03"],
+    ["FIN-SW", "HR-11"],
+    ["FIN-SW", "HR-12"],
+    ["FIN-SW", "LEGAL-06"],
+    ["FIN-SW", "RECEP-01"],
+
+    ["OPS-SW", "DEV-04"],
+    ["OPS-SW", "DEV-05"],
+    ["OPS-SW", "SALES-07"],
+    ["OPS-SW", "SALES-08"],
+    ["OPS-SW", "IT-09"],
+    ["OPS-SW", "EXEC-01"],
+    ["OPS-SW", "MKTG-03"]
+  ]
+}
