@@ -8,12 +8,27 @@
   </head>
   <body>
     <!-- The 3D canvas renders the board. All UI lives in the DOM overlay. -->
-    <div id="overlay">
-      <div id="overlay-title">PATCH TUESDAY // SKELETON</div>
-      <div id="overlay-selected">SELECTED: none</div>
+
+    <!-- Top-left: war-room header and the node inspector. -->
+    <div id="hud">
+      <div id="hud-title">PATCH TUESDAY</div>
+      <div id="hud-subtitle">MERIDIAN MUTUAL // HQ ESTATE</div>
+
+      <div id="inspector" class="empty" aria-live="polite">
+        <div id="inspect-name">No node selected</div>
+        <div id="inspect-type"></div>
+        <div id="inspect-role">Click a node, or Tab through the asset register.</div>
+        <div id="inspect-edr" class="inspect-edr"></div>
+        <div id="inspect-connections"></div>
+      </div>
+
       <div id="overlay-fps">FPS: --</div>
-      <div id="overlay-help">drag to pan / wheel to zoom / click a node</div>
+      <div id="hud-help">drag to pan / wheel to zoom / click or Tab to a node</div>
     </div>
+
+    <!-- Right side: the asset register, the keyboard path onto the board. -->
+    <nav id="roster" aria-label="Asset register"></nav>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
