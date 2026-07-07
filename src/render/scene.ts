@@ -1,19 +1,19 @@
-// Scene setup for the Phase -1 spike: renderer, tilted fixed camera with pan
+// Scene setup for the spike board: renderer, tilted fixed camera with pan
 // and zoom, one shadow-casting directional light, a ground plane, and a 6x6
 // grid of boxes drawn as a single instanced mesh.
 
 import * as THREE from 'three';
 import { MapControls } from 'three/addons/controls/MapControls.js';
+import { palette } from '../config/palette';
 
 export const GRID_SIZE = 6;
 export const NODE_COUNT = GRID_SIZE * GRID_SIZE;
 const SPACING = 1.4;
 const BOX_SIZE = 0.85;
 
-// Palette. Boxes sit slightly muted so hover and selection can pop.
-export const COLOUR_BASE = new THREE.Color('#2f8fb3');
-export const COLOUR_HOVER = new THREE.Color('#4cc9f0');
-export const COLOUR_SELECTED = new THREE.Color('#c8f0fc');
+export const COLOUR_BASE = new THREE.Color(palette.nodeBase);
+export const COLOUR_HOVER = new THREE.Color(palette.nodeHover);
+export const COLOUR_SELECTED = new THREE.Color(palette.nodeSelected);
 
 export interface SpikeScene {
   renderer: THREE.WebGLRenderer;
@@ -34,7 +34,7 @@ export function createScene(): SpikeScene {
   document.body.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#0b0e14');
+  scene.background = new THREE.Color(palette.base);
 
   // Fixed tilted view down at the board. Pan and zoom only, never rotation.
   const camera = new THREE.PerspectiveCamera(
@@ -57,7 +57,7 @@ export function createScene(): SpikeScene {
 
   // One dramatic key light with shadows plus a dim fill so shadowed faces
   // stay readable against the near-black background.
-  const keyLight = new THREE.DirectionalLight('#e8f6fc', 2.2);
+  const keyLight = new THREE.DirectionalLight(palette.keyLight, 2.2);
   keyLight.position.set(6, 12, 4);
   keyLight.castShadow = true;
   keyLight.shadow.mapSize.set(2048, 2048);
@@ -69,11 +69,11 @@ export function createScene(): SpikeScene {
   keyLight.shadow.camera.near = 1;
   keyLight.shadow.camera.far = 30;
   scene.add(keyLight);
-  scene.add(new THREE.AmbientLight('#4cc9f0', 0.25));
+  scene.add(new THREE.AmbientLight(palette.accent, 0.25));
 
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(40, 40),
-    new THREE.MeshStandardMaterial({ color: '#11161f', roughness: 0.95 }),
+    new THREE.MeshStandardMaterial({ color: palette.ground, roughness: 0.95 }),
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;

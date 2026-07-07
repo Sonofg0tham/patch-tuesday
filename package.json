@@ -2,20 +2,26 @@
   "name": "patch-tuesday",
   "private": true,
   "version": "0.0.1",
-  "description": "Turn-based incident response tactics game. Phase -1 spike.",
+  "description": "Turn-based incident response tactics game.",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
   },
   "dependencies": {
+    "@fontsource/chakra-petch": "^5.2.7",
+    "@fontsource/fira-code": "^5.2.7",
     "three": "^0.182.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/three": "^0.182.0",
+    "eslint": "^10.6.0",
     "typescript": "^5.8.0",
+    "typescript-eslint": "^8.63.0",
     "vite": "^7.1.0"
   }
 }

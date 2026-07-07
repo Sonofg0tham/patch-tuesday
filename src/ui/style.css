@@ -1,0 +1,48 @@
+/* UI styling. Colours come from src/config/palette.ts, which writes them
+   onto :root as custom properties at boot; the var() fallbacks here mirror
+   those values only so the page never flashes unstyled before the module
+   runs. Fonts are bundled from Fontsource (see CREDITS.md), no CDN. */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--base, #0b0e14);
+}
+
+canvas {
+  display: block;
+}
+
+#overlay {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--accent, #4cc9f0) 35%, transparent);
+  background: color-mix(in srgb, var(--base, #0b0e14) 85%, transparent);
+  color: var(--text, #c5cdd8);
+  font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  pointer-events: none;
+  user-select: none;
+}
+
+#overlay-title {
+  color: var(--accent, #4cc9f0);
+  font-family: 'Chakra Petch', 'Segoe UI', sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+#overlay-help {
+  opacity: 0.55;
+  font-size: 11px;
+}
