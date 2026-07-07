@@ -1,0 +1,18 @@
+# Dependencies and build output
+node_modules/
+dist/
+
+# Environment files. v1 needs no secrets, the rule exists from day one anyway.
+.env
+.env.*
+
+# Vercel CLI local project link
+.vercel/
+
+# Local tooling output
+.playwright-mcp/
+.remember/
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
