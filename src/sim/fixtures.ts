@@ -29,6 +29,8 @@ export function makeGameState(
     backupCredits: SIM_CONFIG.backupCredits,
     emergencyUsed: false,
     score: 0,
+    pressure: 0,
+    findings: [],
     status: 'playing',
     ...overrides,
   };
