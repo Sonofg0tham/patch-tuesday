@@ -560,7 +560,8 @@ canvas {
   display: none;
 }
 
-/* The Post-Incident Review: a one-page security document. */
+/* The Post-Incident Review: a one-page security document. It is delivered onto
+   the desk rather than just appearing, sliding up as it fades in. */
 .pir-doc {
   width: 100%;
   max-width: 660px;
@@ -568,6 +569,26 @@ canvas {
   padding: 26px 30px;
   border: 1px solid color-mix(in srgb, var(--accent, #4cc9f0) 34%, transparent);
   background: color-mix(in srgb, var(--base, #0b0e14) 70%, transparent);
+  animation: pir-deliver 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: top center;
+}
+
+@keyframes pir-deliver {
+  from {
+    opacity: 0;
+    transform: translateY(26px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Respect a reduced-motion request: the document simply appears. */
+@media (prefers-reduced-motion: reduce) {
+  .pir-doc {
+    animation: none;
+  }
 }
 
 .pir-head {
