@@ -20,6 +20,12 @@
       </div>
       <div id="hud-status">0 / 24 encrypted</div>
 
+      <div id="hud-resources">
+        <span id="hud-ap">AP 3/3</span>
+        <span id="hud-credits">BACKUPS 3</span>
+        <span id="hud-score">IMPACT 0</span>
+      </div>
+
       <div id="inspector" class="empty" aria-live="polite">
         <div id="inspect-name">No node selected</div>
         <div id="inspect-type"></div>
@@ -29,10 +35,14 @@
         <div id="inspect-connections"></div>
       </div>
 
+      <!-- The action bar (six actions + emergency) is built in ui/actions.ts. -->
+      <div id="action-bar" role="group" aria-label="Actions"></div>
+      <div id="action-reason" aria-live="assertive"></div>
+
       <button id="end-turn" type="button">End turn  ⏎</button>
 
       <div id="overlay-fps">FPS: --</div>
-      <div id="hud-help">End turn to advance · drag to pan · wheel to zoom · click or Tab a node · press d for debug</div>
+      <div id="hud-help">Select a node, then act · End turn to advance · press d for debug</div>
     </div>
 
     <!-- Right side: the asset register, the keyboard path onto the board. -->
@@ -40,6 +50,9 @@
 
     <!-- Debug overlay, hidden until toggled with the 'd' key. -->
     <aside id="debug" aria-hidden="true"></aside>
+
+    <!-- Placeholder end screen (the real Post-Incident Review is Phase 4). -->
+    <div id="endscreen" hidden></div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
