@@ -30,7 +30,17 @@ export function createInitialState(
   const zero = pickPatientZero(topology, config, rng);
   nodes[zero.id] = { state: 'infected', infectedTurns: 0 };
 
-  return { seed, rngState: rng.state(), turn: 1, nodes };
+  return {
+    seed,
+    rngState: rng.state(),
+    turn: 1,
+    nodes,
+    ap: config.apPerTurn,
+    backupCredits: config.backupCredits,
+    emergencyUsed: false,
+    score: 0,
+    status: 'playing',
+  };
 }
 
 // Patient zero: a random node of the configured type, preferring the
@@ -62,9 +72,7 @@ export function stepTurn(
 ): TurnResult {
   const rng = createRng(state.rngState);
   const nodes: Record<string, NodeState> = {};
-  for (const [id, ns] of Object.entries(state.nodes)) {
-    nodes[id] = { state: ns.state, infectedTurns: ns.infectedTurns };
-  }
+  for (const [id, ns] of Object.entries(state.nodes)) nodes[id] = { ...ns };
   const events: TurnEvent[] = [];
 
   // Only nodes infected at the start of the turn spread, in a fixed id order so
@@ -77,15 +85,16 @@ export function stepTurn(
     const source = topology.byId.get(sourceId);
     if (!source) continue;
     // Per-cable spread: the node rolls against each clean neighbour it can
-    // reach this turn. A neighbour infected earlier this turn is no longer
-    // clean and is skipped. Neighbours are pre-sorted, so RNG use is fixed.
-    for (const targetId of liveNeighbours(source)) {
+    // reach this turn along a live cable. A neighbour infected earlier this
+    // turn is no longer clean and is skipped. Neighbours are pre-sorted, so
+    // RNG use is fixed.
+    for (const targetId of liveNeighbours(source, nodes)) {
       if (nodes[targetId].state !== 'clean') continue;
       const roll = rng.next();
       const success = roll < config.spreadChance;
       events.push({ kind: 'spread-attempt', source: sourceId, target: targetId, roll, success });
       if (success) {
-        nodes[targetId] = { state: 'infected', infectedTurns: 0 };
+        nodes[targetId] = { state: 'infected', infectedTurns: 0, revealed: nodes[targetId].revealed };
         events.push({ kind: 'infected', node: targetId });
       }
     }
@@ -103,23 +112,25 @@ export function stepTurn(
   }
 
   return {
-    nextState: { seed: state.seed, rngState: rng.state(), turn: state.turn + 1, nodes },
+    nextState: { ...state, rngState: rng.state(), turn: state.turn + 1, nodes },
     events,
   };
 }
 
-// Neighbours reachable along a live cable. Every cable is live in Phase 2;
-// isolation (cut cables) arrives in Phase 3 and will filter here.
-function liveNeighbours(node: TopologyNode): string[] {
-  return node.neighbours;
+// Neighbours reachable along a live cable. A cable is live only if neither of
+// its endpoints is isolated, so isolating a node cuts spread in both directions.
+function liveNeighbours(node: TopologyNode, nodes: Record<string, NodeState>): string[] {
+  if (nodes[node.id]?.isolated) return [];
+  return node.neighbours.filter((id) => !nodes[id]?.isolated);
 }
 
-// The fog of war. Visible state is a pure function of true state and EDR
-// coverage: an encrypted node is always visible (it has gone dark), an infected
-// node is visible only if it has EDR, otherwise it reads clean.
+// The fog of war. Visible state is a pure function of true state, EDR coverage
+// and whether the node has been scanned. Patched and encrypted nodes are always
+// visible; an infected node is visible only if it has EDR or has been revealed.
 export function visibleStateOf(node: TopologyNode, ns: NodeState): VisibleState {
   if (ns.state === 'encrypted') return 'encrypted';
-  if (ns.state === 'infected') return node.edr ? 'infected' : 'clean';
+  if (ns.state === 'patched') return 'patched';
+  if (ns.state === 'infected') return node.edr || ns.revealed ? 'infected' : 'clean';
   return 'clean';
 }
 

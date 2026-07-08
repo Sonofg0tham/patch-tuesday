@@ -1,8 +1,8 @@
-// Entry point. Loads the estate, builds the board, and coordinates the two
-// ways in: the mouse (pointer picking) and the keyboard (the asset register).
-// A single controller merges mouse hover and keyboard focus into one board
-// highlight so the inputs never fight, and keeps selection in sync across the
-// board, the inspector and the register.
+// Entry point. Loads the estate, builds the board, and runs the incident: the
+// player spends AP on the six actions, ends the turn, and the worm resolves.
+// Actions and turn resolution are pure sim; this file only wires input to the
+// sim and renders the result. A central renderState() keeps the board, the HUD
+// and the inspector in step after every action and every turn.
 
 // Bundled web fonts (OFL, recorded in CREDITS.md). Vite emits the woff2 files
 // into the build, nothing is fetched from a CDN at runtime.
@@ -21,9 +21,12 @@ import { createOverlay } from './ui/overlay';
 import { createRoster } from './ui/roster';
 import { createHud } from './ui/hud';
 import { createDebug } from './ui/debug';
+import { createActionBar } from './ui/actions';
+import { createEndScreen } from './ui/endscreen';
 import { SIM_CONFIG } from './sim/config';
-import { createInitialState, stepTurn, toVisibleView, blastRadius, encryptedCount } from './sim/worm';
-import type { GameState, TurnEvent, VisibleState } from './sim/types';
+import { createInitialState, toVisibleView, blastRadius, encryptedCount } from './sim/worm';
+import { applyPlayerAction, endTurn } from './sim/game';
+import type { ActionKind, GameState, PlayerAction, TurnEvent, VisibleState } from './sim/types';
 
 applyPaletteToCss();
 
@@ -36,25 +39,21 @@ const overlay = createOverlay(topology);
 const hud = createHud();
 const rosterContainer = mustFind('roster');
 const debug = createDebug(mustFind('debug'));
+const endScreen = createEndScreen(mustFind('endscreen'));
 const animator = createSpreadAnimator(board, topology);
 
 // The seed comes from ?seed= for reproducible debugging, otherwise a fresh
-// random one is minted so each visit is a new incident. Either way it is shown
-// in the HUD so any run can be reproduced.
+// random one is minted so each visit is a new incident.
 const seed = new URLSearchParams(window.location.search).get('seed') ?? randomSeed();
 
 let state: GameState = createInitialState(topology, seed);
 let currentView: Record<string, VisibleState> = toVisibleView(state, topology);
 let lastEvents: TurnEvent[] = [];
 let selectedId: string | null = null;
-
-board.applyView(currentView);
-hud.setSeed(seed);
-hud.setTurn(state.turn);
+let ended = false;
 
 // Highlight = whatever the user is pointing at or has keyboard-focused.
-// Selection = what the user actually chose to inspect. Pointer hover wins
-// over keyboard focus when both are live, so the board tracks the cursor.
+// Selection = what the user chose to act on. Pointer hover wins over keyboard.
 let pointerHover: string | null = null;
 let keyboardFocus: string | null = null;
 
@@ -64,26 +63,85 @@ function refreshHighlight(): void {
 
 function refreshInspector(): void {
   const node = selectedId ? (topology.byId.get(selectedId) ?? null) : null;
-  overlay.inspect(node, selectedId ? currentView[selectedId] : undefined);
+  const status = selectedId ? currentView[selectedId] : undefined;
+  const isolated = selectedId ? state.nodes[selectedId].isolated : false;
+  overlay.inspect(node, status, isolated);
 }
 
 function select(nodeId: string | null): void {
   selectedId = nodeId;
   board.setSelected(nodeId);
   roster.setActive(nodeId);
+  actionBar.setReason('', true);
   refreshInspector();
 }
 
 function updateStatus(): void {
   const total = topology.nodes.length;
-  const encrypted = encryptedCount(state);
-  const dcLost = Object.entries(state.nodes).some(
-    ([id, ns]) => ns.state === 'encrypted' && topology.byId.get(id)?.type === 'domain-controller',
-  );
-  const lost = dcLost || blastRadius(state) >= SIM_CONFIG.lossBlastRadius;
-  const note = dcLost ? ' · DOMAIN CONTROLLER LOST' : lost ? ' · BOARD LOST' : '';
-  hud.setStatus(`${encrypted} / ${total} encrypted (${Math.round(blastRadius(state) * 100)}%)${note}`, lost);
+  const pct = Math.round(blastRadius(state) * 100);
+  const note =
+    state.status === 'lost'
+      ? state.lossReason === 'domain-controller'
+        ? ' · DOMAIN CONTROLLER LOST'
+        : ' · ESTATE OVERRUN'
+      : state.status === 'won'
+        ? ' · CONTAINED'
+        : '';
+  hud.setStatus(`${encryptedCount(state)} / ${total} encrypted (${pct}%)${note}`, state.status === 'lost');
 }
+
+// Refresh just the HUD numbers (used immediately on End Turn, before the board
+// animation has finished).
+function renderHud(): void {
+  hud.setTurn(state.turn);
+  updateStatus();
+  actionBar.setAp(state.ap, SIM_CONFIG.apPerTurn);
+  actionBar.setCredits(state.backupCredits);
+  actionBar.setScore(state.score);
+}
+
+// Full refresh: board, isolation, HUD, inspector, debug, and the end screen.
+// Called after actions (instant) and once a turn's spread animation completes.
+function renderState(): void {
+  currentView = toVisibleView(state, topology);
+  board.applyView(currentView);
+  for (const node of topology.nodes) board.setIsolated(node.id, Boolean(state.nodes[node.id].isolated));
+  renderHud();
+  roster.setActive(selectedId);
+  refreshInspector();
+  if (debug.isVisible()) debug.render(state, topology, lastEvents);
+  if (state.status !== 'playing') endGame();
+}
+
+function setInputsEnabled(enabled: boolean): void {
+  hud.setEndTurnEnabled(enabled);
+  actionBar.setEnabled(enabled);
+}
+
+function endGame(): void {
+  if (ended) return;
+  ended = true;
+  setInputsEnabled(false);
+  endScreen.show(state, topology.nodes.length);
+}
+
+// Applies one player action to the selected node (or none, for emergency),
+// shows the outcome, and re-renders. Blocked actions surface their reason.
+function act(kind: ActionKind): void {
+  if (animator.isPlaying() || state.status !== 'playing') return;
+  const needsNode = kind !== 'emergency';
+  if (needsNode && !selectedId) {
+    actionBar.setReason('select a node first', false);
+    return;
+  }
+  const action: PlayerAction = { kind, node: needsNode ? (selectedId ?? undefined) : undefined };
+  const result = applyPlayerAction(state, action, topology);
+  state = result.state;
+  actionBar.setReason(result.ok ? '' : (result.reason ?? ''), result.ok);
+  renderState();
+}
+
+const actionBar = createActionBar(mustFind('action-bar'), { onAction: act });
 
 const roster = createRoster(rosterContainer, topology, {
   onFocus(nodeId) {
@@ -105,25 +163,23 @@ createPointerPicker(context, board, {
   },
 });
 
-// End Turn: resolve one turn in the sim, then let the animator replay the
-// spread. End Turn is locked out until the replay finishes.
+// End Turn: resolve the turn in the sim, refresh the HUD immediately, then let
+// the animator replay the spread. Inputs are locked until the replay finishes.
 hud.onEndTurn(() => {
-  if (animator.isPlaying()) return;
+  if (animator.isPlaying() || state.status !== 'playing') return;
   const before = currentView;
-  const result = stepTurn(state, topology);
+  const result = endTurn(state, topology);
   state = result.nextState;
   lastEvents = result.events;
   currentView = toVisibleView(state, topology);
-  hud.setTurn(state.turn);
-  hud.setEndTurnEnabled(false);
+  renderHud();
+  setInputsEnabled(false);
   animator.play(before, currentView);
 });
 
 animator.onComplete(() => {
-  hud.setEndTurnEnabled(true);
-  updateStatus();
-  refreshInspector();
-  if (debug.isVisible()) debug.render(state, topology, lastEvents);
+  renderState();
+  if (state.status === 'playing') setInputsEnabled(true);
 });
 
 // Debug overlay: 'd' toggles the true-vs-visible table. Ignored while typing.
@@ -135,8 +191,9 @@ window.addEventListener('keydown', (event) => {
   debug.render(state, topology, lastEvents);
 });
 
-overlay.inspect(null);
-updateStatus();
+hud.setSeed(seed);
+select(null);
+renderState();
 
 // Rolling fps: count frames and refresh the readout twice a second.
 let frames = 0;
@@ -187,10 +244,14 @@ declare global {
     __sim: {
       seed: string;
       turn: () => number;
+      status: () => string;
+      ap: () => number;
+      score: () => number;
       encrypted: () => number;
       trueView: () => Record<string, string>;
       visibleView: () => Record<string, VisibleState>;
-      advanceInstant: (n: number) => void;
+      act: (kind: ActionKind, node?: string) => { ok: boolean; reason?: string };
+      endTurnInstant: (n: number) => void;
     };
   }
 }
@@ -210,21 +271,28 @@ window.__spikeBench = (benchFrames = 120) => {
   };
 };
 
-// Verification hook: advances the sim without the animation so a given turn can
-// be reached instantly and inspected. Used to prove determinism and the fog of
-// war; not part of normal play.
+// Verification hook: drives the sim without waiting on animation, so a run can
+// be scripted and inspected. Used to reach win/lose states and prove the fog;
+// not part of normal play.
 window.__sim = {
   seed,
   turn: () => state.turn,
+  status: () => state.status,
+  ap: () => state.ap,
+  score: () => state.score,
   encrypted: () => encryptedCount(state),
   trueView: () => Object.fromEntries(Object.entries(state.nodes).map(([id, ns]) => [id, ns.state])),
   visibleView: () => ({ ...currentView }),
-  advanceInstant(n: number) {
-    for (let i = 0; i < n; i += 1) state = stepTurn(state, topology).nextState;
-    currentView = toVisibleView(state, topology);
-    board.applyView(currentView);
-    hud.setTurn(state.turn);
-    updateStatus();
-    refreshInspector();
+  act(kind, node) {
+    const result = applyPlayerAction(state, { kind, node }, topology);
+    state = result.state;
+    renderState();
+    return { ok: result.ok, reason: result.reason };
+  },
+  endTurnInstant(n: number) {
+    for (let i = 0; i < n && state.status === 'playing'; i += 1) {
+      state = endTurn(state, topology).nextState;
+    }
+    renderState();
   },
 };
