@@ -9,6 +9,7 @@
 // as markup.
 
 import type { Topology } from '../data/topology';
+import { SIM_CONFIG } from '../sim/config';
 import type { GameState, TurnEvent } from '../sim/types';
 import { blastRadius, encryptedCount, infectedCount, visibleStateOf } from '../sim/worm';
 
@@ -60,7 +61,7 @@ function meta(state: GameState, topology: Topology): HTMLElement {
   el.textContent =
     `seed ${state.seed} · T+${String(state.turn).padStart(2, '0')}h · ` +
     `${infectedCount(state)} infected · ${encryptedCount(state)}/${total} encrypted ` +
-    `(${Math.round(blastRadius(state) * 100)}%)`;
+    `(${Math.round(blastRadius(state) * 100)}%) · pressure ${Math.round(state.pressure)}/${SIM_CONFIG.pressureMax}`;
   return el;
 }
 

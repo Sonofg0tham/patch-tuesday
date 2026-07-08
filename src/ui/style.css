@@ -90,6 +90,70 @@ canvas {
   font-weight: 600;
 }
 
+/* Business pressure meter: a labelled bar that rises with sustained isolation. */
+#hud-pressure {
+  margin-bottom: 8px;
+}
+
+#pressure-label {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  opacity: 0.6;
+  margin-bottom: 3px;
+}
+
+#pressure-bar {
+  height: 6px;
+  border: 1px solid color-mix(in srgb, var(--accent, #4cc9f0) 30%, transparent);
+  background: color-mix(in srgb, var(--base, #0b0e14) 60%, transparent);
+}
+
+#pressure-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent, #4cc9f0);
+  transition: width 0.2s ease;
+}
+
+/* Amber as it builds, magenta and pulsing once an override is imminent. */
+#hud-pressure.rising #pressure-fill {
+  background: #f5a524;
+}
+
+#hud-pressure.imminent #pressure-fill {
+  background: var(--infection, #f72585);
+}
+
+#hud-pressure.imminent #pressure-label {
+  color: var(--infection, #f72585);
+  opacity: 1;
+  font-weight: 600;
+  animation: pressure-pulse 1s ease-in-out infinite;
+}
+
+@keyframes pressure-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* A transient notice line, e.g. a forced reconnect. Empty by default. */
+#hud-notice {
+  min-height: 0;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--infection, #f72585);
+}
+
+#hud-notice.active {
+  min-height: 16px;
+  margin-bottom: 6px;
+}
+
+#hud-notice.active::before {
+  content: '⚠ ';
+}
+
 #inspector {
   border-top: 1px solid color-mix(in srgb, var(--accent, #4cc9f0) 20%, transparent);
   padding-top: 10px;

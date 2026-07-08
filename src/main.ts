@@ -67,7 +67,7 @@ function refreshInspector(): void {
   const ns = selectedId ? state.nodes[selectedId] : undefined;
   // A deployed sensor shows as coverage, but built-in EDR is not a "sensor".
   const sensored = Boolean(ns?.revealed) && !(node?.edr ?? false);
-  overlay.inspect(node, status, ns?.isolated, sensored);
+  overlay.inspect(node, status, ns?.isolated, sensored, ns?.isolationAge);
 }
 
 function select(nodeId: string | null): void {
@@ -100,6 +100,7 @@ function renderHud(): void {
   actionBar.setAp(state.ap, SIM_CONFIG.apPerTurn);
   actionBar.setCredits(state.backupCredits);
   actionBar.setScore(state.score);
+  hud.setPressure(state.pressure, SIM_CONFIG.pressureMax);
 }
 
 // Full refresh: board, isolation, HUD, inspector, debug, and the end screen.
@@ -178,6 +179,15 @@ hud.onEndTurn(() => {
   state = result.nextState;
   lastEvents = result.events;
   currentView = toVisibleView(state, topology);
+  // Announce any business override the turn it happens; blank turns clear it.
+  const overrides = lastEvents.filter(
+    (e): e is Extract<TurnEvent, { kind: 'override' }> => e.kind === 'override',
+  );
+  hud.setNotice(
+    overrides.length > 0
+      ? `Business pressure forced ${overrides.map((e) => topology.byId.get(e.node)?.label ?? e.node).join(', ')} back online`
+      : '',
+  );
   renderHud();
   setInputsEnabled(false);
   animator.play(before, currentView);
@@ -253,6 +263,7 @@ declare global {
       status: () => string;
       ap: () => number;
       score: () => number;
+      pressure: () => number;
       encrypted: () => number;
       trueView: () => Record<string, string>;
       visibleView: () => Record<string, VisibleState>;
@@ -285,6 +296,7 @@ window.__sim = {
   turn: () => state.turn,
   status: () => state.status,
   ap: () => state.ap,
+  pressure: () => state.pressure,
   score: () => state.score,
   encrypted: () => encryptedCount(state),
   trueView: () => Object.fromEntries(Object.entries(state.nodes).map(([id, ns]) => [id, ns.state])),

@@ -196,6 +196,91 @@ describe('turn resolution: score and win/lose', () => {
   });
 });
 
+describe('business pressure', () => {
+  // A lone infected node (no cables, so it never spreads or encrypts within a
+  // couple of turns) keeps the incident 'playing' so multi-turn pressure tests
+  // are not cut short by a win.
+  const SENTINEL = { INF: { state: 'infected' as const, infectedTurns: 0 } };
+
+  it('rises while a node is isolated and falls when nothing is', () => {
+    const topology = makeTopology([{ id: 'R', type: 'router' }, { id: 'INF' }], []);
+    // Isolate the router: weight 18 exceeds recovery 10, so pressure climbs.
+    let state = makeGameState({ R: { state: 'clean', infectedTurns: 0, isolated: true }, ...SENTINEL });
+    state = endTurn(state, topology).nextState;
+    const afterIsolated = state.pressure;
+    expect(afterIsolated).toBe(SIM_CONFIG.pressureWeight.router - SIM_CONFIG.pressureRecoveryPerTurn);
+
+    // Nothing isolated now: pressure recovers toward zero.
+    state.nodes.R.isolated = false;
+    state = endTurn(state, topology).nextState;
+    expect(state.pressure).toBeLessThan(afterIsolated);
+  });
+
+  it('a router raises pressure faster than a workstation', () => {
+    const line = makeTopology([{ id: 'X' }], []);
+    const router = makeGameState({ X: { state: 'clean', infectedTurns: 0, isolated: true } });
+    const routerTopo = makeTopology([{ id: 'X', type: 'router' }], []);
+    const wsAfter = endTurn(router, line).nextState.pressure;
+    const rtAfter = endTurn(router, routerTopo).nextState.pressure;
+    expect(rtAfter).toBeGreaterThan(wsAfter);
+  });
+
+  it('isolation age increments while isolated and resets on reconnect', () => {
+    const topology = makeTopology([{ id: 'A' }, { id: 'INF' }], []);
+    let state = applyPlayerAction(
+      makeGameState({ A: { state: 'clean', infectedTurns: 0 }, ...SENTINEL }),
+      { kind: 'isolate', node: 'A' },
+      topology,
+    ).state;
+    expect(state.nodes.A.isolationAge).toBe(0);
+    state = endTurn(state, topology).nextState;
+    expect(state.nodes.A.isolationAge).toBe(1);
+    state = endTurn(state, topology).nextState;
+    expect(state.nodes.A.isolationAge).toBe(2);
+    state = applyPlayerAction(state, { kind: 'reconnect', node: 'A' }, topology).state;
+    expect(state.nodes.A.isolationAge).toBe(0);
+  });
+
+  it('a maxed meter force-reconnects the longest-isolated node with a finding', () => {
+    const topology = makeTopology([{ id: 'OLD' }, { id: 'NEW' }], []);
+    const state = makeGameState(
+      {
+        OLD: { state: 'clean', infectedTurns: 0, isolated: true, isolationAge: 5 },
+        NEW: { state: 'clean', infectedTurns: 0, isolated: true, isolationAge: 1 },
+      },
+      { pressure: SIM_CONFIG.pressureMax, turn: 7 },
+    );
+    const result = endTurn(state, topology);
+    expect(result.nextState.nodes.OLD.isolated).toBe(false); // oldest forced back
+    expect(result.nextState.nodes.NEW.isolated).toBe(true); // newer one kept
+    expect(result.events.some((e) => e.kind === 'override' && e.node === 'OLD')).toBe(true);
+    expect(result.nextState.findings).toContainEqual({ turn: 7, kind: 'business-override', node: 'OLD' });
+  });
+
+  it('steady bleed: still-maxed next turn forces another reconnect', () => {
+    // Three routers isolated (load 54) far exceed recovery, so after one forced
+    // reconnect the meter is still maxed and forces the next-oldest.
+    const topology = makeTopology(
+      [{ id: 'A', type: 'router' }, { id: 'B', type: 'router' }, { id: 'C', type: 'router' }, { id: 'INF' }],
+      [],
+    );
+    let state = makeGameState(
+      {
+        A: { state: 'clean', infectedTurns: 0, isolated: true, isolationAge: 5 },
+        B: { state: 'clean', infectedTurns: 0, isolated: true, isolationAge: 4 },
+        C: { state: 'clean', infectedTurns: 0, isolated: true, isolationAge: 3 },
+        ...SENTINEL,
+      },
+      { pressure: SIM_CONFIG.pressureMax },
+    );
+    state = endTurn(state, topology).nextState;
+    expect(state.nodes.A.isolated).toBe(false);
+    expect(state.pressure).toBe(SIM_CONFIG.pressureMax); // still pinned
+    const second = endTurn(state, topology);
+    expect(second.events.some((e) => e.kind === 'override' && e.node === 'B')).toBe(true);
+  });
+});
+
 describe('replay determinism (seed + moves)', () => {
   const topology = loadTopology();
   const moves: Move[] = [

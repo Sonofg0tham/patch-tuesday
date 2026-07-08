@@ -110,6 +110,21 @@ export const greedyBot: Bot = (state, topology, config, _rng) => {
     }
   }
 
+  // Manage business pressure: once the meter is building, reconnect the
+  // heaviest node that no longer needs isolating (clean/patched, no visibly
+  // infected neighbour). This rotates containment and keeps the business from
+  // force-reconnecting a still-dangerous node.
+  if (state.pressure >= config.pressureMax * 0.5 && state.ap >= config.actionCosts.reconnect) {
+    const safe = topology.nodes.filter(
+      (n) =>
+        state.nodes[n.id].isolated &&
+        (visible[n.id] === 'clean' || visible[n.id] === 'patched') &&
+        !n.neighbours.some((id) => visible[id] === 'infected' || visible[id] === 'encrypted'),
+    );
+    const target = highest(safe, (n) => config.pressureWeight[n.type]);
+    if (target) return { kind: 'reconnect', node: target.id };
+  }
+
   // Deploy a sensor. A sensor now covers one node, so place it ahead of the
   // spread frontier: a clean, unmonitored node next to a visible infection,
   // where the worm lands next and will be seen the turn it arrives. With no
