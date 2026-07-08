@@ -18,6 +18,12 @@ export interface SimConfig {
   patientZeroEdgeOnly: boolean;
   /** Fraction of the estate encrypted that counts as the board being lost. */
   lossBlastRadius: number;
+  /**
+   * Pre-player spread turns the worm runs before the incident is detected at
+   * T+01h, so the player is paged to an established foothold rather than a lone
+   * patient zero. These turns do not spend AP or accrue score.
+   */
+  dwellTurns: number;
 
   // --- The action economy ---
   /** Action points granted at the start of each turn. */
@@ -46,6 +52,7 @@ export const SIM_CONFIG: SimConfig = {
   patientZeroType: 'workstation',
   patientZeroEdgeOnly: true,
   lossBlastRadius: 0.6,
+  dwellTurns: 2,
 
   apPerTurn: 3,
   backupCredits: 3,
