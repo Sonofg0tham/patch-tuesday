@@ -6,7 +6,6 @@
 // need to turn a click or a key press into a node id.
 
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { palette } from '../config/palette';
 import type { NodeType, Topology, TopologyNode } from '../data/topology';
 import { NODE_TYPES } from '../data/topology';
@@ -22,6 +21,7 @@ const COLOUR_HIGHLIGHT = new THREE.Color(palette.nodeHover);
 const COLOUR_SELECTED = new THREE.Color(palette.nodeSelected);
 const COLOUR_INFECTION = new THREE.Color(palette.infection); // magenta, the threat
 const COLOUR_ENCRYPTED = new THREE.Color('#180a14'); // gone dark, magenta-tinted
+const COLOUR_PATCHED = new THREE.Color('#8ff0d4'); // immune, a brighter defended cyan
 
 export const CABLE_HEIGHT = 0.12; // cables run just above the floor, clear of silhouettes
 const CABLE_RADIUS = 0.045;
@@ -38,10 +38,18 @@ export interface Board {
   resolveHit(object: THREE.Object3D, instanceId: number | undefined): string | null;
   setHighlight(nodeId: string | null): void;
   setSelected(nodeId: string | null): void;
-  /** Set one node's visible infection state (drives colour and encryption edges). */
+  /** Set one node's visible infection state (drives colour and state edges). */
   setVisibleState(nodeId: string, state: VisibleState): void;
   /** Apply a whole visible view at once (normal play) or true view (debug). */
   applyView(view: Record<string, VisibleState>): void;
+  /** Cut or restore a node's cables to show isolation. */
+  setIsolated(nodeId: string, isolated: boolean): void;
+}
+
+interface CableRecord {
+  mesh: THREE.Mesh;
+  a: string;
+  b: string;
 }
 
 export function createBoard(topology: Topology): Board {
@@ -85,13 +93,17 @@ export function createBoard(topology: Topology): Board {
   }
 
   group.add(buildEdrMarkers(topology));
-  group.add(buildCables(topology));
+  const { group: cableGroup, cablesByNode } = buildCables(topology);
+  group.add(cableGroup);
 
-  // Magenta wireframe outlines for encrypted nodes, one edge geometry per type
-  // built once and reused. Overlays are created lazily as nodes encrypt.
+  // Wireframe outlines for state changes, one edge geometry per type built once
+  // and reused: magenta for encrypted (compromised), cyan for patched
+  // (defended). Overlays are created lazily as nodes change state.
   const edgesByType = buildEdgeGeometries(geometries);
-  const edgeMaterial = new THREE.LineBasicMaterial({ color: palette.infection });
-  const encryptionEdges = new Map<string, THREE.LineSegments>();
+  const encryptedMaterial = new THREE.LineBasicMaterial({ color: palette.infection });
+  const patchedMaterial = new THREE.LineBasicMaterial({ color: COLOUR_PATCHED });
+  const stateEdges = new Map<string, THREE.LineSegments>();
+  const isolatedSet = new Set<string>();
 
   // Node state: infection (visible) plus the transient hover/selection.
   const visibleById = new Map<string, VisibleState>();
@@ -99,11 +111,13 @@ export function createBoard(topology: Topology): Board {
   let selectedId: string | null = null;
 
   // Infection outranks selection and hover for the fill colour: the threat
-  // colour must never be lost to a cursor passing over it.
+  // colour must never be lost to a cursor passing over it. Patched sits with
+  // the state colours too.
   function colourFor(nodeId: string): THREE.Color {
     const visible = visibleById.get(nodeId) ?? 'clean';
     if (visible === 'encrypted') return COLOUR_ENCRYPTED;
     if (visible === 'infected') return COLOUR_INFECTION;
+    if (visible === 'patched') return COLOUR_PATCHED;
     if (nodeId === selectedId) return COLOUR_SELECTED;
     if (nodeId === highlightedId) return COLOUR_HIGHLIGHT;
     return COLOUR_BASE;
@@ -119,28 +133,36 @@ export function createBoard(topology: Topology): Board {
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   }
 
-  // Adds or removes the magenta edge outline for a node as it encrypts.
-  function updateEncryptionEdge(nodeId: string, visible: VisibleState): void {
-    const has = encryptionEdges.has(nodeId);
-    if (visible === 'encrypted' && !has) {
-      const node = topology.byId.get(nodeId);
-      if (!node) return;
-      const outline = new THREE.LineSegments(edgesByType[node.type], edgeMaterial);
-      outline.position.set(node.x, 0, node.z);
-      encryptionEdges.set(nodeId, outline);
-      group.add(outline);
-    } else if (visible !== 'encrypted' && has) {
-      const outline = encryptionEdges.get(nodeId);
-      if (outline) group.remove(outline);
-      encryptionEdges.delete(nodeId);
+  // Adds, swaps or removes a node's wireframe outline as it encrypts or is
+  // patched. Encrypted uses magenta, patched cyan, anything else no outline.
+  function updateStateEdge(nodeId: string, visible: VisibleState): void {
+    const wanted =
+      visible === 'encrypted' ? encryptedMaterial : visible === 'patched' ? patchedMaterial : null;
+    const existing = stateEdges.get(nodeId);
+    if (existing && existing.material === wanted) return;
+    if (existing) {
+      group.remove(existing);
+      stateEdges.delete(nodeId);
     }
+    if (!wanted) return;
+    const node = topology.byId.get(nodeId);
+    if (!node) return;
+    const outline = new THREE.LineSegments(edgesByType[node.type], wanted);
+    outline.position.set(node.x, 0, node.z);
+    stateEdges.set(nodeId, outline);
+    group.add(outline);
   }
 
   function setVisibleState(nodeId: string, state: VisibleState): void {
     if (visibleById.get(nodeId) === state) return;
     visibleById.set(nodeId, state);
-    updateEncryptionEdge(nodeId, state);
+    updateStateEdge(nodeId, state);
     repaint(nodeId);
+  }
+
+  // A cable is visible only while both of its endpoints are connected.
+  function refreshCable(record: CableRecord): void {
+    record.mesh.visible = !isolatedSet.has(record.a) && !isolatedSet.has(record.b);
   }
 
   return {
@@ -169,6 +191,11 @@ export function createBoard(topology: Topology): Board {
     setVisibleState,
     applyView(view) {
       for (const [nodeId, state] of Object.entries(view)) setVisibleState(nodeId, state);
+    },
+    setIsolated(nodeId, isolated) {
+      if (isolated) isolatedSet.add(nodeId);
+      else isolatedSet.delete(nodeId);
+      for (const record of cablesByNode.get(nodeId) ?? []) refreshCable(record);
     },
   };
 }
@@ -202,20 +229,16 @@ function buildEdrMarkers(topology: Topology): THREE.InstancedMesh {
   return mesh;
 }
 
-// Every cable merged into a single mesh: a thin tube running near the floor
-// between the two node positions.
-function buildCables(topology: Topology): THREE.Mesh {
-  const segments: THREE.BufferGeometry[] = [];
+// Cables as one thin tube each, near the floor, indexed by the nodes they
+// touch so isolation can hide a node's cables. One shared material; 23 cables
+// is a negligible number of draw calls and buys per-cable visibility control.
+function buildCables(topology: Topology): {
+  group: THREE.Group;
+  cablesByNode: Map<string, CableRecord[]>;
+} {
+  const group = new THREE.Group();
+  const cablesByNode = new Map<string, CableRecord[]>();
   const up = new THREE.Vector3(0, 1, 0);
-
-  for (const cable of topology.cables) {
-    const a = topology.byId.get(cable.a);
-    const b = topology.byId.get(cable.b);
-    if (!a || !b) continue;
-    segments.push(tubeBetween(a, b, up));
-  }
-
-  const merged = segments.length > 0 ? mergeGeometries(segments, false) : null;
   const material = new THREE.MeshStandardMaterial({
     color: palette.accent,
     emissive: palette.accent,
@@ -224,9 +247,26 @@ function buildCables(topology: Topology): THREE.Mesh {
     transparent: true,
     opacity: 0.55,
   });
-  const mesh = new THREE.Mesh(merged ?? new THREE.BufferGeometry(), material);
-  mesh.receiveShadow = true;
-  return mesh;
+
+  const index = (id: string, record: CableRecord): void => {
+    const list = cablesByNode.get(id);
+    if (list) list.push(record);
+    else cablesByNode.set(id, [record]);
+  };
+
+  for (const cable of topology.cables) {
+    const a = topology.byId.get(cable.a);
+    const b = topology.byId.get(cable.b);
+    if (!a || !b) continue;
+    const mesh = new THREE.Mesh(tubeBetween(a, b, up), material);
+    mesh.receiveShadow = true;
+    const record: CableRecord = { mesh, a: cable.a, b: cable.b };
+    index(cable.a, record);
+    index(cable.b, record);
+    group.add(mesh);
+  }
+
+  return { group, cablesByNode };
 }
 
 function tubeBetween(a: TopologyNode, b: TopologyNode, up: THREE.Vector3): THREE.BufferGeometry {
