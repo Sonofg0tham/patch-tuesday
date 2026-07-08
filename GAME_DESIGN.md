@@ -32,7 +32,7 @@ v1 ships one hand-authored topology defined in JSON. Phase 4 adds seeded procedu
 
 ## The threat (v1: the WORM)
 
-- Patient zero appears on turn 1 at a random edge workstation.
+- Patient zero appears at a random edge workstation, then the worm dwells: it spreads unopposed for a few turns (dwellTurns, default 2, in sim config) before the incident is detected. The player is paged to an established foothold at T+01h, not a lone patient zero. (Added in Phase 3.5 as a structural difficulty lever: a single patient zero was trivially found and cured, so a competent player never lost.)
 - Each INFECTED node makes one spread attempt per turn against each clean neighbour along a live cable: 60 percent base chance to infect each. (Revised in Phase 2 from a single random-cable attempt, which measured at a 100 percent fizzle rate on the v1 topology because high-degree junctions diluted their three attempts. Per-cable spread reaches 60 percent encryption in about 86 percent of undefended runs, mean 7.8 turns.)
 - A node infected for 3 consecutive turns becomes ENCRYPTED: it stops spreading, but it is lost unless restored, and its value bleeds score every turn.
 - Detection: nodes with EDR coverage (about 60 percent of the board, marked visibly) reveal infection the turn it lands. Uncovered nodes show clean until scanned or until they encrypt. This is the fog of war.

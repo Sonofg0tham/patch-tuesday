@@ -30,7 +30,7 @@ export function createInitialState(
   const zero = pickPatientZero(topology, config, rng);
   nodes[zero.id] = { state: 'infected', infectedTurns: 0 };
 
-  return {
+  let state: GameState = {
     seed,
     rngState: rng.state(),
     turn: 1,
@@ -41,6 +41,16 @@ export function createInitialState(
     score: 0,
     status: 'playing',
   };
+
+  // Dwell time: the worm spreads for a few turns before the incident is
+  // detected, so the player is handed an established foothold, not a lone
+  // patient zero. These pre-player turns spread and age the infection but do
+  // not spend AP or accrue score; the clock is reset to T+01h at handover.
+  for (let i = 0; i < config.dwellTurns; i += 1) {
+    state = stepTurn(state, topology, config).nextState;
+  }
+
+  return { ...state, turn: 1 };
 }
 
 // Patient zero: a random node of the configured type, preferring the
