@@ -13,7 +13,9 @@
     "test": "vitest run",
     "stats": "vite-node scripts/spread-stats.ts",
     "bots": "vite-node scripts/bot-stats.ts",
-    "dwell": "vite-node scripts/dwell-sweep.ts"
+    "dwell": "vite-node scripts/dwell-sweep.ts",
+    "gen": "vite-node scripts/gen-sweep.ts",
+    "pir": "vite-node scripts/pir-demo.ts"
   },
   "dependencies": {
     "@fontsource/chakra-petch": "^5.2.7",
