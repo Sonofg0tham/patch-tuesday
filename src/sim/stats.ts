@@ -15,6 +15,8 @@ export interface StatsOptions {
   maxTurns: number;
   /** Seed prefix, so a stats run is itself reproducible. */
   seedPrefix?: string;
+  /** Optional config override; defaults to SIM_CONFIG. */
+  config?: SimConfig;
 }
 
 export interface StatsResult {
@@ -56,12 +58,12 @@ export function runToThreshold(
 }
 
 export function runSpreadStats(topology: Topology, options: StatsOptions): StatsResult {
-  const { runs, threshold, maxTurns, seedPrefix = 'stats' } = options;
+  const { runs, threshold, maxTurns, seedPrefix = 'stats', config = SIM_CONFIG } = options;
   const samples: number[] = [];
   let fizzled = 0;
 
   for (let i = 0; i < runs; i += 1) {
-    const result = runToThreshold(topology, `${seedPrefix}-${i}`, threshold, maxTurns);
+    const result = runToThreshold(topology, `${seedPrefix}-${i}`, threshold, maxTurns, config);
     if (result === null) fizzled += 1;
     else samples.push(result);
   }

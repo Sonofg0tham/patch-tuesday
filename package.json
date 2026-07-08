@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "stats": "vite-node scripts/spread-stats.ts"
+    "stats": "vite-node scripts/spread-stats.ts",
+    "bots": "vite-node scripts/bot-stats.ts"
   },
   "dependencies": {
     "@fontsource/chakra-petch": "^5.2.7",
