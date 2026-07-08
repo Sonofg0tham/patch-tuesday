@@ -62,7 +62,7 @@ export const SIM_CONFIG: SimConfig = {
   lossBlastRadius: 0.6,
   dwellTurns: 2,
 
-  apPerTurn: 3,
+  apPerTurn: 2,
   backupCredits: 3,
   emergencyApBonus: 2,
   actionCosts: {

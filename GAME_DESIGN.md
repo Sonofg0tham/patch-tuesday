@@ -16,7 +16,7 @@ It's 03:12 on a Wednesday and the on-call phone is screaming. Ransomware is loos
 
 ## Core loop
 
-Per turn (about 45-60 seconds of thought): read the board, spend up to 3 Action Points, end turn, watch the threat spread and events fire, reassess. Per run: first detection, containment fight, eradication, recovery, PIR. Target run length 15-20 minutes, roughly 20-30 turns.
+Per turn (about 45-60 seconds of thought): read the board, spend up to 2 Action Points, end turn, watch the threat spread and events fire, reassess. Per run: first detection, containment fight, eradication, recovery, PIR. Target run length 15-20 minutes, roughly 20-30 turns.
 
 ## The board
 
@@ -39,7 +39,7 @@ v1 ships one hand-authored topology defined in JSON. Phase 4 adds seeded procedu
 
 Threat variants (STALKER, which routes toward the backup node; LOUDMOUTH, fast but always visible) are designed here but parked for v2.
 
-## Player actions (3 AP per turn)
+## Player actions (2 AP per turn)
 
 - **Deploy Sensor** (1 AP): place permanent EDR coverage on one node. Like built-in EDR it reveals that node's true state on placement and any future infection the turn it lands. No neighbour reveal: coverage is bought one node at a time. (Redesigned in Phase 3.6 from Scan, which revealed a node plus all its neighbours and let one cheap scan illuminate a whole segment.)
 - **Isolate** (1 AP): cut all cables on a node. Spread cannot cross. The node's services go offline, costing score each turn it stays isolated and adding to business pressure (weighted by type, a router hurts the business more than a workstation). Added in Phase 3.7: when pressure maxes, the business force-reconnects the single longest-isolated node at the start of the next spread phase and it becomes a PIR finding. Pressure falls as things reconnect.
