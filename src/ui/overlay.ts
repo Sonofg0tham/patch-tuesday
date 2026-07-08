@@ -26,6 +26,7 @@ export interface Overlay {
     status?: VisibleState,
     isolated?: boolean,
     sensored?: boolean,
+    isolationAge?: number,
   ): void;
   setFps(fps: number): void;
 }
@@ -41,7 +42,7 @@ export function createOverlay(topology: Topology): Overlay {
   const panel = mustFind('inspector');
 
   return {
-    inspect(node, status = 'clean', isolated = false, sensored = false) {
+    inspect(node, status = 'clean', isolated = false, sensored = false, isolationAge = 0) {
       if (node === null) {
         panel.classList.add('empty');
         nameEl.textContent = 'No node selected';
@@ -68,8 +69,10 @@ export function createOverlay(topology: Topology): Overlay {
           : 'EDR: NOT COVERED';
       edrEl.className = covered ? 'inspect-edr on' : 'inspect-edr off';
       // Visible infection status, again words plus a class. Isolation is noted
-      // in words too, since its board cue is the missing cables.
-      statusEl.textContent = isolated ? `${STATUS_LABEL[status]} · ISOLATED` : STATUS_LABEL[status];
+      // in words (its board cue is the missing cables), with its age in hours so
+      // the player can see how much business pressure it is building.
+      const isolationNote = isolated ? ` · ISOLATED (${isolationAge}h)` : '';
+      statusEl.textContent = `${STATUS_LABEL[status]}${isolationNote}`;
       statusEl.className = `inspect-status s-${status}`;
 
       const names = node.neighbours.map((id) => topology.byId.get(id)?.label ?? id);

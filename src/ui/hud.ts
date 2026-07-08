@@ -8,6 +8,10 @@ export interface Hud {
   setTurn(turn: number): void;
   setSeed(seed: string): void;
   setStatus(text: string, lost: boolean): void;
+  /** Business pressure meter: 0..max, with a warning state near and at max. */
+  setPressure(value: number, max: number): void;
+  /** A transient one-line notice (e.g. a forced reconnect), '' clears it. */
+  setNotice(text: string): void;
   setEndTurnEnabled(enabled: boolean): void;
   onEndTurn(callback: () => void): void;
 }
@@ -16,6 +20,10 @@ export function createHud(): Hud {
   const clockEl = mustFind('hud-clock');
   const seedEl = mustFind('hud-seed');
   const statusEl = mustFind('hud-status');
+  const pressureWrap = mustFind('hud-pressure');
+  const pressureFill = mustFind('pressure-fill');
+  const pressureLabel = mustFind('pressure-label');
+  const noticeEl = mustFind('hud-notice');
   const button = mustFind('end-turn') as HTMLButtonElement;
 
   let endTurnCallback: () => void = () => {};
@@ -48,6 +56,23 @@ export function createHud(): Hud {
     setStatus(text, lost) {
       statusEl.textContent = text;
       statusEl.classList.toggle('lost', lost);
+    },
+    setPressure(value, max) {
+      const fraction = max > 0 ? Math.min(1, value / max) : 0;
+      pressureFill.style.width = `${Math.round(fraction * 100)}%`;
+      // Amber as it builds, magenta and "OVERRIDE IMMINENT" once maxed: the
+      // clear warning the turn before the business forces a reconnect.
+      const imminent = value >= max;
+      const rising = value >= max * 0.8;
+      pressureWrap.classList.toggle('imminent', imminent);
+      pressureWrap.classList.toggle('rising', rising && !imminent);
+      pressureLabel.textContent = imminent
+        ? 'BUSINESS PRESSURE — OVERRIDE IMMINENT'
+        : 'BUSINESS PRESSURE';
+    },
+    setNotice(text) {
+      noticeEl.textContent = text;
+      noticeEl.classList.toggle('active', text !== '');
     },
     setEndTurnEnabled(enabled) {
       button.disabled = !enabled;

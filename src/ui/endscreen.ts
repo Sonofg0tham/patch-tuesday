@@ -11,6 +11,14 @@ export interface EndScreen {
   show(state: GameState, totalNodes: number): void;
 }
 
+// A phrase for the business-override findings (the seed of the Phase 4 PIR).
+function overrideCount(state: GameState): string {
+  const overrides = state.findings.filter((f) => f.kind === 'business-override');
+  if (overrides.length === 0) return 'none';
+  const turns = overrides.map((f) => `T+${String(f.turn).padStart(2, '0')}h`).join(', ');
+  return `${overrides.length} (${turns})`;
+}
+
 export function createEndScreen(container: HTMLElement): EndScreen {
   return {
     show(state, totalNodes) {
@@ -38,6 +46,7 @@ export function createEndScreen(container: HTMLElement): EndScreen {
         ['Blast radius', `${Math.round(blastRadius(state) * 100)}% (${encryptedCount(state)}/${totalNodes} encrypted)`],
         ['Impact score', String(state.score)],
         ['Backup credits burned', `${SIM_CONFIG.backupCredits - state.backupCredits} of ${SIM_CONFIG.backupCredits}`],
+        ['Containment overrides', overrideCount(state)],
         ['Emergency change control', state.emergencyUsed ? 'BYPASSED' : 'not used'],
       ];
       for (const [label, value] of rows) {
