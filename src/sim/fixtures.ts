@@ -3,11 +3,35 @@
 // suites can share it.
 
 import type { Cable, NodeType, Topology, TopologyNode } from '../data/topology';
+import { SIM_CONFIG } from './config';
+import { hashSeed } from './rng';
+import type { GameState, NodeState } from './types';
 
 export interface NodeSpec {
   id: string;
   type?: NodeType;
   edr?: boolean;
+}
+
+// Builds a full GameState around a node map, filling the economy fields with
+// sensible defaults so individual tests need only supply the nodes they care
+// about. Overrides let a test pin ap, backupCredits, status, and so on.
+export function makeGameState(
+  nodes: Record<string, NodeState>,
+  overrides: Partial<GameState> = {},
+): GameState {
+  return {
+    seed: overrides.seed ?? 'test',
+    rngState: overrides.rngState ?? hashSeed(overrides.seed ?? 'test'),
+    turn: 1,
+    nodes,
+    ap: SIM_CONFIG.apPerTurn,
+    backupCredits: SIM_CONFIG.backupCredits,
+    emergencyUsed: false,
+    score: 0,
+    status: 'playing',
+    ...overrides,
+  };
 }
 
 // Builds a Topology from a flat node list and cable pairs. Positions are laid

@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { makeTopology } from './fixtures';
-import type { GameState } from './types';
+import { makeGameState, makeTopology } from './fixtures';
 import { toTrueView, toVisibleView, visibleStateOf } from './worm';
 
 describe('fog of war', () => {
@@ -29,16 +28,19 @@ describe('fog of war', () => {
   });
 
   it('the visible view can differ from the true view (the horror gap)', () => {
-    const state: GameState = {
-      seed: 's',
-      rngState: 0,
-      turn: 5,
-      nodes: {
-        COVERED: { state: 'clean', infectedTurns: 0 },
-        BLIND: { state: 'infected', infectedTurns: 2 },
-      },
-    };
+    const state = makeGameState({
+      COVERED: { state: 'clean', infectedTurns: 0 },
+      BLIND: { state: 'infected', infectedTurns: 2 },
+    });
     expect(toVisibleView(state, topology).BLIND).toBe('clean'); // player sees green
     expect(toTrueView(state).BLIND).toBe('infected'); // but it is rotting
+  });
+
+  it('reveals a scanned infection even without EDR', () => {
+    expect(visibleStateOf(blind, { state: 'infected', infectedTurns: 1, revealed: true })).toBe('infected');
+  });
+
+  it('always shows a patched node as patched', () => {
+    expect(visibleStateOf(blind, { state: 'patched', infectedTurns: 0 })).toBe('patched');
   });
 });
