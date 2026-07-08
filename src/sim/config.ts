@@ -60,7 +60,7 @@ export const SIM_CONFIG: SimConfig = {
   patientZeroType: 'workstation',
   patientZeroEdgeOnly: true,
   lossBlastRadius: 0.6,
-  dwellTurns: 2,
+  dwellTurns: 3,
 
   apPerTurn: 2,
   backupCredits: 2,
