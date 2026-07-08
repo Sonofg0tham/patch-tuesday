@@ -9,7 +9,7 @@ It's 03:12 on a Wednesday and the on-call phone is screaming. Ransomware is loos
 
 ## Design pillars
 
-1. **Every turn is a trade-off.** Actions are scarce. Isolating a segment stops the spread and takes the business offline. Restoring burns a backup you might need more later. There are no free moves.
+1. **Every turn is a trade-off.** Actions are scarce. Isolating a segment stops the spread and takes the business offline. Restoring burns a backup you might need more later. There are no free moves. Isolation is borrowed time, not a wall: leave too much of the estate cut off and business pressure builds until the business overrides IT and forces your oldest containment back online, ready or not.
 2. **Visibility is a resource.** You fight what you can see, and you cannot see everywhere. EDR coverage has gaps, and the scariest node on the board is the one showing green because nothing is watching it. You can buy visibility, one node at a time, by spending an action point to deploy a sensor, so every square of the board you can see cost you a move you could not spend on containment.
 3. **Every mechanic is real IR tradecraft.** Containment, eradication, recovery, the emergency change that bypasses control and haunts the review. If it wouldn't appear in a real post-incident review, it doesn't go in the game.
 4. **The review is the reckoning.** Win or lose, the run ends in a Post-Incident Review generated from what actually happened. Mistakes are findings. The game is allowed to be funny about them.
@@ -42,8 +42,8 @@ Threat variants (STALKER, which routes toward the backup node; LOUDMOUTH, fast b
 ## Player actions (3 AP per turn)
 
 - **Deploy Sensor** (1 AP): place permanent EDR coverage on one node. Like built-in EDR it reveals that node's true state on placement and any future infection the turn it lands. No neighbour reveal: coverage is bought one node at a time. (Redesigned in Phase 3.6 from Scan, which revealed a node plus all its neighbours and let one cheap scan illuminate a whole segment.)
-- **Isolate** (1 AP): cut all cables on a node. Spread cannot cross. The node's services go offline, costing score each turn it stays isolated.
-- **Reconnect** (1 AP): restore a node's cables.
+- **Isolate** (1 AP): cut all cables on a node. Spread cannot cross. The node's services go offline, costing score each turn it stays isolated and adding to business pressure (weighted by type, a router hurts the business more than a workstation). Added in Phase 3.7: when pressure maxes, the business force-reconnects the single longest-isolated node at the start of the next spread phase and it becomes a PIR finding. Pressure falls as things reconnect.
+- **Reconnect** (1 AP): restore a node's cables, relieving business pressure.
 - **Patch** (2 AP): immunise a clean node permanently. Cannot patch an infected node.
 - **Restore** (2 AP, consumes 1 backup credit of 3): return an infected or encrypted node to clean. Useless if the backup node is lost.
 - **Emergency budget** (once per run, free): the CISO grants +2 AP this turn. The PIR permanently records "emergency change control bypassed". Sometimes worth it. Always embarrassing.
