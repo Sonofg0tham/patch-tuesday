@@ -12,7 +12,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "stats": "vite-node scripts/spread-stats.ts",
-    "bots": "vite-node scripts/bot-stats.ts"
+    "bots": "vite-node scripts/bot-stats.ts",
+    "dwell": "vite-node scripts/dwell-sweep.ts"
   },
   "dependencies": {
     "@fontsource/chakra-petch": "^5.2.7",
