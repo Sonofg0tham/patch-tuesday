@@ -32,7 +32,7 @@ v1 ships one hand-authored topology defined in JSON. Phase 4 adds seeded procedu
 
 ## The threat (v1: the WORM)
 
-- Patient zero appears at a random edge workstation, then the worm dwells: it spreads unopposed for a few turns (dwellTurns, default 2, in sim config) before the incident is detected. The player is paged to an established foothold at T+01h, not a lone patient zero. (Added in Phase 3.5 as a structural difficulty lever: a single patient zero was trivially found and cured, so a competent player never lost.)
+- Patient zero appears at a random edge workstation, then the worm dwells: it spreads unopposed for a few turns (dwellTurns, default 3, in sim config) before the incident is detected. The player is paged to an established foothold at T+01h, not a lone patient zero. (Added in Phase 3.5 as a structural difficulty lever: a single patient zero was trivially found and cured, so a competent player never lost. Locked at 3 in Phase 3.10, the value that put the greedy reference bot inside the 40-70 percent target band, see the v1 economy baseline below.)
 - Each INFECTED node makes one spread attempt per turn against each clean neighbour along a live cable: 60 percent base chance to infect each. (Revised in Phase 2 from a single random-cable attempt, which measured at a 100 percent fizzle rate on the v1 topology because high-degree junctions diluted their three attempts. Per-cable spread reaches 60 percent encryption in about 86 percent of undefended runs, mean 7.8 turns.)
 - A node infected for 3 consecutive turns becomes ENCRYPTED: it stops spreading, but it is lost unless restored, and its value bleeds score every turn.
 - Detection: nodes with EDR coverage (about 60 percent of the board, marked visibly) reveal infection the turn it lands. Uncovered nodes show clean until scanned or until they encrypt. This is the fog of war.
@@ -47,6 +47,18 @@ Threat variants (STALKER, which routes toward the backup node; LOUDMOUTH, fast b
 - **Patch** (2 AP): immunise a clean node permanently. Cannot patch an infected node.
 - **Restore** (2 AP, consumes 1 backup credit of 2): return an infected or encrypted node to clean. Useless if the backup node is lost.
 - **Emergency budget** (once per run, free): the CISO grants +2 AP this turn. The PIR permanently records "emergency change control bypassed". Sometimes worth it. Always embarrassing.
+
+## v1 economy baseline (locked, Phase 3.10)
+
+These are the locked v1 tuning values. No further balance changes without a new decision. All live in `src/sim/config.ts`.
+
+- **Foothold:** dwellTurns 3, spreadChance 0.6, encryptAfterTurns 3, lossBlastRadius 0.6.
+- **Economy:** apPerTurn 2, backupCredits 2, emergency +2 AP once per run. Action costs: deploy sensor / isolate / reconnect 1 AP, patch / restore 2 AP, failed-patch probe 1 AP.
+- **Pressure:** pressureMax 100, recovery 10 per turn, weights workstation 4 / server 12 / backup 12 / domain-controller 15 / router 18.
+
+**Measured on the locked economy (4,000 games each, single v1 topology):** the greedy reference bot wins **67 percent** (inside the 40-70 percent target band), the random-legal bot (casual-play floor) wins **18 percent**, and an undefended board reaches 60 percent encryption in **87 percent** of runs, mean **4.9 player-turns** from detection.
+
+These numbers were reached through the measured 3.5-3.9 sequence, one lever at a time (dwell, sensors, business pressure, the AP cut, backup credits), each with its own before/after instrumentation. That sequence is the audit trail: the phase PRs record what each knob did and why, and why the run finally locked at dwell 3. Instrument, don't tune, from here.
 
 ## Win, lose, and the clock
 
