@@ -13,11 +13,13 @@ import {
 
 const CONFIG = SIM_CONFIG;
 
+const NO_DWELL = { ...SIM_CONFIG, dwellTurns: 0 };
+
 describe('patient zero', () => {
-  it('infects exactly one workstation, deterministically per seed', () => {
+  it('infects exactly one workstation, deterministically per seed (no dwell)', () => {
     const topology = loadTopology();
-    const a = createInitialState(topology, 'DEMO');
-    const b = createInitialState(topology, 'DEMO');
+    const a = createInitialState(topology, 'DEMO', NO_DWELL);
+    const b = createInitialState(topology, 'DEMO', NO_DWELL);
     expect(a).toEqual(b);
 
     const infected = Object.entries(a.nodes).filter(([, n]) => n.state === 'infected');
@@ -31,11 +33,37 @@ describe('patient zero', () => {
     const topology = loadTopology();
     const zeros = new Set<string>();
     for (let i = 0; i < 40; i += 1) {
-      const state = createInitialState(topology, `seed-${i}`);
+      const state = createInitialState(topology, `seed-${i}`, NO_DWELL);
       const [id] = Object.entries(state.nodes).find(([, n]) => n.state === 'infected') ?? [];
       if (id) zeros.add(id);
     }
     expect(zeros.size).toBeGreaterThan(1);
+  });
+});
+
+describe('dwell time', () => {
+  it('hands the player a foothold at T+01h, deterministically', () => {
+    const topology = loadTopology();
+    const a = createInitialState(topology, 'DWELL', { ...SIM_CONFIG, dwellTurns: 3 });
+    const b = createInitialState(topology, 'DWELL', { ...SIM_CONFIG, dwellTurns: 3 });
+    expect(a).toEqual(b); // reproducible from the seed
+
+    // The clock is reset to T+01h and the player's resources are untouched.
+    expect(a.turn).toBe(1);
+    expect(a.ap).toBe(SIM_CONFIG.apPerTurn);
+    expect(a.score).toBe(0);
+    expect(a.status).toBe('playing');
+
+    // More than one node is compromised: an established foothold.
+    const touched = Object.values(a.nodes).filter((n) => n.state !== 'clean' && n.state !== 'patched');
+    expect(touched.length).toBeGreaterThan(1);
+  });
+
+  it('with dwellTurns 0 leaves a single patient zero', () => {
+    const topology = loadTopology();
+    const state = createInitialState(topology, 'DWELL', NO_DWELL);
+    const infected = Object.values(state.nodes).filter((n) => n.state === 'infected');
+    expect(infected).toHaveLength(1);
   });
 });
 
