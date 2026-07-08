@@ -21,6 +21,16 @@ export interface NodeState {
   isolated?: boolean;
   /** Scanned or probed: the player sees this node's true state from now on. */
   revealed?: boolean;
+  /** Turns this node has stayed isolated. Feeds business pressure and the override. */
+  isolationAge?: number;
+}
+
+// A Post-Incident Review finding, recorded as it happens with its timestamp.
+// The full PIR is Phase 4; for now only business overrides are recorded.
+export interface Finding {
+  turn: number;
+  kind: 'business-override';
+  node: string;
 }
 
 // The whole run, serialisable and reproducible from its seed. rngState carries
@@ -39,6 +49,10 @@ export interface GameState {
   emergencyUsed: boolean;
   /** Running penalty: downtime plus encrypted value bled. Higher is worse. */
   score: number;
+  /** Business pressure from sustained isolation; maxing it forces a reconnect. */
+  pressure: number;
+  /** PIR findings recorded during the run (currently business overrides). */
+  findings: Finding[];
   status: 'playing' | 'won' | 'lost';
   lossReason?: 'domain-controller' | 'blast-radius';
 }
@@ -67,7 +81,8 @@ export type TurnEvent =
   | { kind: 'spread-attempt'; source: string; target: string; roll: number; success: boolean }
   | { kind: 'infected'; node: string }
   | { kind: 'encrypted'; node: string }
-  | { kind: 'action'; action: ActionKind; node?: string; ok: boolean; reason?: string };
+  | { kind: 'action'; action: ActionKind; node?: string; ok: boolean; reason?: string }
+  | { kind: 'override'; node: string };
 
 export interface TurnResult {
   nextState: GameState;

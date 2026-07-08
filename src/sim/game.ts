@@ -90,6 +90,7 @@ export function applyPlayerAction(
       if (next.ap < cost) return reject(state, action, apReason(cost, next.ap));
       next.ap -= cost;
       ns.isolated = true;
+      ns.isolationAge = 0;
       return accept(next, action);
     }
     case 'reconnect': {
@@ -98,6 +99,7 @@ export function applyPlayerAction(
       if (next.ap < cost) return reject(state, action, apReason(cost, next.ap));
       next.ap -= cost;
       ns.isolated = false;
+      ns.isolationAge = 0;
       return accept(next, action);
     }
     case 'patch': {
@@ -171,8 +173,36 @@ function applyStatus(state: GameState, topology: Topology, config: SimConfig): v
   if (infectedCount(state) === 0) state.status = 'won';
 }
 
-// Ends the turn: resolve the worm spread, refresh AP, accrue score, and settle
-// win/lose. The spread itself is the WORM's stepTurn, unchanged.
+// Business pressure added this turn: each isolated node contributes its
+// type weight (a router costs the business more than a workstation).
+function pressureLoad(state: GameState, topology: Topology, config: SimConfig): number {
+  let load = 0;
+  for (const node of topology.nodes) {
+    if (state.nodes[node.id].isolated) load += config.pressureWeight[node.type];
+  }
+  return load;
+}
+
+// The single longest-isolated node, for the business override. Ties break by id
+// so the choice is deterministic.
+function longestIsolated(state: GameState, topology: Topology): string | null {
+  let victim: string | null = null;
+  let bestAge = -1;
+  for (const node of [...topology.nodes].sort((a, b) => a.id.localeCompare(b.id))) {
+    const ns = state.nodes[node.id];
+    if (!ns.isolated) continue;
+    const age = ns.isolationAge ?? 0;
+    if (age > bestAge) {
+      bestAge = age;
+      victim = node.id;
+    }
+  }
+  return victim;
+}
+
+// Ends the turn: a business override may force a reconnect, then the worm
+// spreads, isolation ages, business pressure accrues, AP refreshes, score
+// accrues, and win/lose settles.
 export function endTurn(
   state: GameState,
   topology: Topology,
@@ -180,12 +210,53 @@ export function endTurn(
 ): TurnResult {
   if (state.status !== 'playing') return { nextState: state, events: [] };
 
-  const spread = stepTurn(state, topology, config);
+  const events: TurnEvent[] = [];
+
+  // 1. Business override at the start of the spread phase: if pressure is
+  //    maxed, the business force-reconnects the oldest containment, ready or
+  //    not. Steady bleed: one node per turn while the meter sits at max.
+  let working = state;
+  if (state.pressure >= config.pressureMax) {
+    const victim = longestIsolated(state, topology);
+    if (victim) {
+      working = cloneState(state);
+      working.nodes[victim].isolated = false;
+      working.nodes[victim].isolationAge = 0;
+      working.findings = [
+        ...working.findings,
+        { turn: state.turn, kind: 'business-override', node: victim },
+      ];
+      events.push({ kind: 'override', node: victim });
+    }
+  }
+
+  // 2. The worm spreads (across any freshly force-reconnected cable).
+  const spread = stepTurn(working, topology, config);
   const next = spread.nextState;
+  events.push(...spread.events);
+
+  // 3. Age isolation for every node still isolated.
+  for (const node of topology.nodes) {
+    const ns = next.nodes[node.id];
+    if (ns.isolated) ns.isolationAge = (ns.isolationAge ?? 0) + 1;
+  }
+
+  // 4. Accumulate business pressure, then let it recover a little each turn.
+  next.pressure = clamp(
+    next.pressure + pressureLoad(next, topology, config) - config.pressureRecoveryPerTurn,
+    0,
+    config.pressureMax,
+  );
+
+  // 5. Refresh AP, accrue score, settle win/lose.
   next.ap = config.apPerTurn;
   next.score += turnPenalty(next, topology, config);
   applyStatus(next, topology, config);
-  return { nextState: next, events: spread.events };
+  return { nextState: next, events };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 // Replays a whole game from its seed and move list. Same inputs, same output,

@@ -39,6 +39,8 @@ export function createInitialState(
     backupCredits: config.backupCredits,
     emergencyUsed: false,
     score: 0,
+    pressure: 0,
+    findings: [],
     status: 'playing',
   };
 
@@ -104,7 +106,7 @@ export function stepTurn(
       const success = roll < config.spreadChance;
       events.push({ kind: 'spread-attempt', source: sourceId, target: targetId, roll, success });
       if (success) {
-        nodes[targetId] = { state: 'infected', infectedTurns: 0, revealed: nodes[targetId].revealed };
+        nodes[targetId] = { ...nodes[targetId], state: 'infected', infectedTurns: 0 };
         events.push({ kind: 'infected', node: targetId });
       }
     }

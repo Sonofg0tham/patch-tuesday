@@ -44,6 +44,14 @@ export interface SimConfig {
   encryptedBleedPerTurn: number;
   /** Penalty per turn for each isolated node, as a fraction of its value. */
   isolationDowntimePerTurn: number;
+
+  // --- Business pressure (sustained isolation threatens the run) ---
+  /** Pressure ceiling; at max the business force-reconnects your oldest node. */
+  pressureMax: number;
+  /** Pressure added per turn for each isolated node, by type (router heaviest). */
+  pressureWeight: Record<NodeType, number>;
+  /** Pressure shed each turn, so light isolation is tolerable and recovers. */
+  pressureRecoveryPerTurn: number;
 }
 
 export const SIM_CONFIG: SimConfig = {
@@ -75,4 +83,14 @@ export const SIM_CONFIG: SimConfig = {
   },
   encryptedBleedPerTurn: 0.25,
   isolationDowntimePerTurn: 0.15,
+
+  pressureMax: 100,
+  pressureWeight: {
+    workstation: 4,
+    server: 12,
+    router: 18,
+    backup: 12,
+    'domain-controller': 15,
+  },
+  pressureRecoveryPerTurn: 10,
 };
