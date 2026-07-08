@@ -11,6 +11,7 @@ import { createRng, hashSeed, type Rng } from './rng';
 import { applyPlayerAction, endTurn } from './game';
 import type { PlayerAction } from './types';
 import { blastRadius, createInitialState, toVisibleView } from './worm';
+import { RunRecorder, type RunRecord } from './pir';
 
 export interface BotOutcome {
   status: 'won' | 'lost' | 'playing';
@@ -60,6 +61,51 @@ export function runBot(
     score: state.score,
     backupsUsed: config.backupCredits - state.backupCredits,
     emergencyUsed: state.emergencyUsed,
+  };
+}
+
+// Like runBot, but records the event log and downtime into a RunRecord so the
+// Post-Incident Review can be built from a headless run. The recording protocol
+// (record ok actions and every turn's resolution, tick downtime at each turn
+// close) is exactly what the interactive driver in main.ts follows, so a bot
+// run and a human run produce reviews the same way.
+export function runBotRecorded(
+  topology: Topology,
+  seed: string,
+  bot: Bot,
+  config: SimConfig = SIM_CONFIG,
+  scenarioName = topology.name,
+  maxTurns = 60,
+): RunRecord {
+  const initial = createInitialState(topology, seed, config);
+  let state = initial;
+  const rng = createRng(hashSeed(`${seed}:bot`));
+  const recorder = new RunRecorder();
+
+  for (let turn = 1; turn <= maxTurns && state.status === 'playing'; turn += 1) {
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const action = bot(state, topology, config, rng);
+      if (!action) break;
+      const result = applyPlayerAction(state, action, topology, config);
+      if (result.ok) {
+        recorder.record(state.turn, result.events);
+        state = result.state;
+      }
+    }
+    const turnNow = state.turn;
+    const resolved = endTurn(state, topology, config);
+    recorder.record(turnNow, resolved.events);
+    state = resolved.nextState;
+    recorder.tickDowntime(state);
+  }
+
+  return {
+    scenarioName,
+    seed,
+    initial,
+    final: state,
+    log: recorder.log,
+    downtimeHours: recorder.downtimeHours,
   };
 }
 

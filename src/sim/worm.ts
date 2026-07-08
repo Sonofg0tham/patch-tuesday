@@ -42,6 +42,7 @@ export function createInitialState(
     pressure: 0,
     findings: [],
     status: 'playing',
+    patientZero: zero.id,
   };
 
   // Dwell time: the worm spreads for a few turns before the incident is
