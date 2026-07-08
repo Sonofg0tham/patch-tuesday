@@ -10,7 +10,7 @@ It's 03:12 on a Wednesday and the on-call phone is screaming. Ransomware is loos
 ## Design pillars
 
 1. **Every turn is a trade-off.** Actions are scarce. Isolating a segment stops the spread and takes the business offline. Restoring burns a backup you might need more later. There are no free moves.
-2. **Visibility is a resource.** You fight what you can see, and you cannot see everywhere. EDR coverage has gaps, and the scariest node on the board is the one showing green because nothing is watching it.
+2. **Visibility is a resource.** You fight what you can see, and you cannot see everywhere. EDR coverage has gaps, and the scariest node on the board is the one showing green because nothing is watching it. You can buy visibility, one node at a time, by spending an action point to deploy a sensor, so every square of the board you can see cost you a move you could not spend on containment.
 3. **Every mechanic is real IR tradecraft.** Containment, eradication, recovery, the emergency change that bypasses control and haunts the review. If it wouldn't appear in a real post-incident review, it doesn't go in the game.
 4. **The review is the reckoning.** Win or lose, the run ends in a Post-Incident Review generated from what actually happened. Mistakes are findings. The game is allowed to be funny about them.
 
@@ -41,7 +41,7 @@ Threat variants (STALKER, which routes toward the backup node; LOUDMOUTH, fast b
 
 ## Player actions (3 AP per turn)
 
-- **Scan** (1 AP): reveal the true state of a node and its direct neighbours.
+- **Deploy Sensor** (1 AP): place permanent EDR coverage on one node. Like built-in EDR it reveals that node's true state on placement and any future infection the turn it lands. No neighbour reveal: coverage is bought one node at a time. (Redesigned in Phase 3.6 from Scan, which revealed a node plus all its neighbours and let one cheap scan illuminate a whole segment.)
 - **Isolate** (1 AP): cut all cables on a node. Spread cannot cross. The node's services go offline, costing score each turn it stays isolated.
 - **Reconnect** (1 AP): restore a node's cables.
 - **Patch** (2 AP): immunise a clean node permanently. Cannot patch an infected node.

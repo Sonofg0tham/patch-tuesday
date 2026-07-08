@@ -9,7 +9,7 @@ import type { Topology, TopologyNode } from '../data/topology';
 import { SIM_CONFIG, type SimConfig } from './config';
 import { createRng, hashSeed, type Rng } from './rng';
 import { applyPlayerAction, endTurn } from './game';
-import type { PlayerAction, VisibleState } from './types';
+import type { PlayerAction } from './types';
 import { blastRadius, createInitialState, toVisibleView } from './worm';
 
 export interface BotOutcome {
@@ -75,12 +75,14 @@ export const randomBot: Bot = (state, topology, _config, rng) => {
   return { kind, node };
 };
 
-// Greedy heuristic: restore crown jewels, isolate infected hubs, scan for
-// blind spots, patch chokepoints. Plays on the visible view like a person.
+// Greedy heuristic: restore crown jewels, isolate infected hubs, deploy sensors
+// ahead of the spread frontier, patch chokepoints. Plays on the visible view
+// like a person, so a sensor's one-node reveal actually costs it information.
 export const greedyBot: Bot = (state, topology, config, _rng) => {
   const visible = toVisibleView(state, topology);
   const value = (n: TopologyNode): number => config.nodeValue[n.type];
   const degree = (n: TopologyNode): number => n.neighbours.length;
+  const covered = (n: TopologyNode): boolean => n.edr || Boolean(state.nodes[n.id].revealed);
 
   const infected = topology.nodes.filter((n) => visible[n.id] === 'infected');
 
@@ -108,12 +110,19 @@ export const greedyBot: Bot = (state, topology, config, _rng) => {
     }
   }
 
-  // Nothing visibly burning: scan the biggest blind spot for a hidden infection.
-  const unseen = topology.nodes.filter(
-    (n) => !n.edr && !state.nodes[n.id].revealed && isPlain(visible[n.id]),
+  // Deploy a sensor. A sensor now covers one node, so place it ahead of the
+  // spread frontier: a clean, unmonitored node next to a visible infection,
+  // where the worm lands next and will be seen the turn it arrives. With no
+  // visible frontier, cover the biggest unmonitored hub instead, to catch
+  // spread routing invisibly through it and to surface a hidden foothold.
+  const compromised = new Set(
+    topology.nodes.filter((n) => visible[n.id] === 'infected' || visible[n.id] === 'encrypted').map((n) => n.id),
   );
-  if (state.ap >= config.actionCosts.scan && unseen.length > 0) {
-    const target = highest(unseen, degree);
+  const uncovered = topology.nodes.filter((n) => !covered(n) && visible[n.id] === 'clean');
+  if (state.ap >= config.actionCosts.scan && uncovered.length > 0) {
+    const frontier = uncovered.filter((n) => n.neighbours.some((id) => compromised.has(id)));
+    const target =
+      frontier.length > 0 ? highest(frontier, value) : highest(uncovered, degree);
     if (target) return { kind: 'scan', node: target.id };
   }
 
@@ -128,10 +137,6 @@ export const greedyBot: Bot = (state, topology, config, _rng) => {
 
   return null; // nothing worth doing, end the turn
 };
-
-function isPlain(state: VisibleState): boolean {
-  return state === 'clean';
-}
 
 function highest(nodes: TopologyNode[], score: (n: TopologyNode) => number): TopologyNode | null {
   let best: TopologyNode | null = null;

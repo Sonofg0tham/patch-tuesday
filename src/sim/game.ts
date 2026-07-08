@@ -75,11 +75,13 @@ export function applyPlayerAction(
 
   switch (action.kind) {
     case 'scan': {
+      // Deploy Sensor: place permanent EDR coverage on this node only. Like
+      // built-in EDR, it reveals the node's true state now and any future
+      // infection the turn it lands. No neighbour reveal.
       const cost = config.actionCosts.scan;
       if (next.ap < cost) return reject(state, action, apReason(cost, next.ap));
       next.ap -= cost;
       ns.revealed = true;
-      for (const neighbour of node.neighbours) next.nodes[neighbour].revealed = true;
       return accept(next, action);
     }
     case 'isolate': {

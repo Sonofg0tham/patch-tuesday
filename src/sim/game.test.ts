@@ -4,7 +4,7 @@ import { SIM_CONFIG } from './config';
 import { makeGameState, makeTopology } from './fixtures';
 import { applyPlayerAction, endTurn, replay } from './game';
 import type { Move } from './types';
-import { stepTurn } from './worm';
+import { stepTurn, visibleStateOf } from './worm';
 
 describe('actions: legality and effects', () => {
   const topology = makeTopology(
@@ -12,7 +12,7 @@ describe('actions: legality and effects', () => {
     [['A', 'B'], ['A', 'BK']],
   );
 
-  it('scan reveals the node and its neighbours and spends 1 AP', () => {
+  it('deploy sensor covers only the target node and spends 1 AP', () => {
     const state = makeGameState({
       A: { state: 'clean', infectedTurns: 0 },
       B: { state: 'infected', infectedTurns: 1 },
@@ -22,7 +22,16 @@ describe('actions: legality and effects', () => {
     expect(r.ok).toBe(true);
     expect(r.state.ap).toBe(SIM_CONFIG.apPerTurn - 1);
     expect(r.state.nodes.A.revealed).toBe(true);
-    expect(r.state.nodes.B.revealed).toBe(true); // neighbour revealed too
+    expect(r.state.nodes.B.revealed).toBeFalsy(); // neighbours are NOT revealed
+  });
+
+  it('deploy sensor reveals a hidden infection on the covered node', () => {
+    const topo = makeTopology([{ id: 'BLIND' }], []); // no EDR
+    const state = makeGameState({ BLIND: { state: 'infected', infectedTurns: 1 } });
+    // Before the sensor the infection is hidden; after, it is visible.
+    expect(visibleStateOf(topo.byId.get('BLIND')!, state.nodes.BLIND)).toBe('clean');
+    const r = applyPlayerAction(state, { kind: 'scan', node: 'BLIND' }, topo);
+    expect(visibleStateOf(topo.byId.get('BLIND')!, r.state.nodes.BLIND)).toBe('infected');
   });
 
   it('isolate then reconnect toggles the flag and each costs 1 AP', () => {

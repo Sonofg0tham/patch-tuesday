@@ -44,6 +44,8 @@ export interface Board {
   applyView(view: Record<string, VisibleState>): void;
   /** Cut or restore a node's cables to show isolation. */
   setIsolated(nodeId: string, isolated: boolean): void;
+  /** Show or hide the EDR ring a deployed sensor adds to a node. */
+  setSensor(nodeId: string, on: boolean): void;
 }
 
 interface CableRecord {
@@ -104,6 +106,17 @@ export function createBoard(topology: Topology): Board {
   const patchedMaterial = new THREE.LineBasicMaterial({ color: COLOUR_PATCHED });
   const stateEdges = new Map<string, THREE.LineSegments>();
   const isolatedSet = new Set<string>();
+
+  // Rings for nodes a deployed sensor now covers, drawn identically to the
+  // built-in EDR markers, so player-added coverage reads the same as native.
+  const sensorGeometry = buildEdrMarkerGeometry();
+  const sensorMaterial = new THREE.MeshStandardMaterial({
+    color: palette.accent,
+    emissive: palette.accent,
+    emissiveIntensity: 0.4,
+    roughness: 0.4,
+  });
+  const sensorRings = new Map<string, THREE.Mesh>();
 
   // Node state: infection (visible) plus the transient hover/selection.
   const visibleById = new Map<string, VisibleState>();
@@ -196,6 +209,21 @@ export function createBoard(topology: Topology): Board {
       if (isolated) isolatedSet.add(nodeId);
       else isolatedSet.delete(nodeId);
       for (const record of cablesByNode.get(nodeId) ?? []) refreshCable(record);
+    },
+    setSensor(nodeId, on) {
+      const has = sensorRings.has(nodeId);
+      if (on && !has) {
+        const node = topology.byId.get(nodeId);
+        if (!node) return;
+        const ring = new THREE.Mesh(sensorGeometry, sensorMaterial);
+        ring.position.set(node.x, nodeTopHeight(node.type) + MARKER_GAP, node.z);
+        sensorRings.set(nodeId, ring);
+        group.add(ring);
+      } else if (!on && has) {
+        const ring = sensorRings.get(nodeId);
+        if (ring) group.remove(ring);
+        sensorRings.delete(nodeId);
+      }
     },
   };
 }
