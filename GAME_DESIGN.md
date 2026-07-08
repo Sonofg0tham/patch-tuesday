@@ -45,7 +45,7 @@ Threat variants (STALKER, which routes toward the backup node; LOUDMOUTH, fast b
 - **Isolate** (1 AP): cut all cables on a node. Spread cannot cross. The node's services go offline, costing score each turn it stays isolated and adding to business pressure (weighted by type, a router hurts the business more than a workstation). Added in Phase 3.7: when pressure maxes, the business force-reconnects the single longest-isolated node at the start of the next spread phase and it becomes a PIR finding. Pressure falls as things reconnect.
 - **Reconnect** (1 AP): restore a node's cables, relieving business pressure.
 - **Patch** (2 AP): immunise a clean node permanently. Cannot patch an infected node.
-- **Restore** (2 AP, consumes 1 backup credit of 3): return an infected or encrypted node to clean. Useless if the backup node is lost.
+- **Restore** (2 AP, consumes 1 backup credit of 2): return an infected or encrypted node to clean. Useless if the backup node is lost.
 - **Emergency budget** (once per run, free): the CISO grants +2 AP this turn. The PIR permanently records "emergency change control bypassed". Sometimes worth it. Always embarrassing.
 
 ## Win, lose, and the clock

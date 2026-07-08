@@ -63,7 +63,7 @@ export const SIM_CONFIG: SimConfig = {
   dwellTurns: 2,
 
   apPerTurn: 2,
-  backupCredits: 3,
+  backupCredits: 2,
   emergencyApBonus: 2,
   actionCosts: {
     scan: 1,
