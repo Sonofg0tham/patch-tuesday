@@ -64,8 +64,10 @@ function refreshHighlight(): void {
 function refreshInspector(): void {
   const node = selectedId ? (topology.byId.get(selectedId) ?? null) : null;
   const status = selectedId ? currentView[selectedId] : undefined;
-  const isolated = selectedId ? state.nodes[selectedId].isolated : false;
-  overlay.inspect(node, status, isolated);
+  const ns = selectedId ? state.nodes[selectedId] : undefined;
+  // A deployed sensor shows as coverage, but built-in EDR is not a "sensor".
+  const sensored = Boolean(ns?.revealed) && !(node?.edr ?? false);
+  overlay.inspect(node, status, ns?.isolated, sensored);
 }
 
 function select(nodeId: string | null): void {
@@ -105,7 +107,11 @@ function renderHud(): void {
 function renderState(): void {
   currentView = toVisibleView(state, topology);
   board.applyView(currentView);
-  for (const node of topology.nodes) board.setIsolated(node.id, Boolean(state.nodes[node.id].isolated));
+  for (const node of topology.nodes) {
+    board.setIsolated(node.id, Boolean(state.nodes[node.id].isolated));
+    // A sensor ring only for coverage the player added, not built-in EDR.
+    board.setSensor(node.id, Boolean(state.nodes[node.id].revealed) && !node.edr);
+  }
   renderHud();
   roster.setActive(selectedId);
   refreshInspector();

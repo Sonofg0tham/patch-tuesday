@@ -21,7 +21,12 @@ const STATUS_LABEL: Record<VisibleState, string> = {
 };
 
 export interface Overlay {
-  inspect(node: TopologyNode | null, status?: VisibleState, isolated?: boolean): void;
+  inspect(
+    node: TopologyNode | null,
+    status?: VisibleState,
+    isolated?: boolean,
+    sensored?: boolean,
+  ): void;
   setFps(fps: number): void;
 }
 
@@ -36,7 +41,7 @@ export function createOverlay(topology: Topology): Overlay {
   const panel = mustFind('inspector');
 
   return {
-    inspect(node, status = 'clean', isolated = false) {
+    inspect(node, status = 'clean', isolated = false, sensored = false) {
       if (node === null) {
         panel.classList.add('empty');
         nameEl.textContent = 'No node selected';
@@ -53,9 +58,15 @@ export function createOverlay(topology: Topology): Overlay {
       nameEl.textContent = node.label;
       typeEl.textContent = TYPE_LABEL[node.type];
       roleEl.textContent = node.role;
-      // EDR status as words plus a state class, never colour alone.
-      edrEl.textContent = node.edr ? 'EDR: covered' : 'EDR: NOT COVERED';
-      edrEl.className = node.edr ? 'inspect-edr on' : 'inspect-edr off';
+      // EDR status as words plus a state class, never colour alone. Coverage
+      // can be built in or added by a deployed sensor.
+      const covered = node.edr || sensored;
+      edrEl.textContent = node.edr
+        ? 'EDR: covered'
+        : sensored
+          ? 'EDR: covered (sensor)'
+          : 'EDR: NOT COVERED';
+      edrEl.className = covered ? 'inspect-edr on' : 'inspect-edr off';
       // Visible infection status, again words plus a class. Isolation is noted
       // in words too, since its board cue is the missing cables.
       statusEl.textContent = isolated ? `${STATUS_LABEL[status]} · ISOLATED` : STATUS_LABEL[status];

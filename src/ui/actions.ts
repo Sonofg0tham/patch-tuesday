@@ -15,7 +15,7 @@ interface ActionDef {
 }
 
 const ACTIONS: ActionDef[] = [
-  { kind: 'scan', label: 'Scan', hotkey: 's', cost: '1', needsNode: true },
+  { kind: 'scan', label: 'Deploy sensor', hotkey: 's', cost: '1', needsNode: true },
   { kind: 'isolate', label: 'Isolate', hotkey: 'i', cost: '1', needsNode: true },
   { kind: 'reconnect', label: 'Reconnect', hotkey: 'c', cost: '1', needsNode: true },
   { kind: 'patch', label: 'Patch', hotkey: 'p', cost: '2', needsNode: true },
