@@ -94,3 +94,53 @@ export const SIM_CONFIG: SimConfig = {
   },
   pressureRecoveryPerTurn: 10,
 };
+
+// --- Procedural topology generation (Phase 4) ---
+//
+// The generator produces seeded estates that vary the board while keeping the
+// locked economy in balance. Every constraint here is derived from the
+// hand-authored MERIDIAN MUTUAL board, measured: 24 nodes; 1 DC, 1 backup, 3
+// routers, 5 servers, 14 workstations; a hub-and-spoke tree (23 cables, density
+// 0.958) with three hubs (degree 9, 8, 8); 58 percent EDR coverage with the
+// finance segment switch blind. The band-holding rule is absolute: if a wider
+// envelope breaks the balance gate, tighten the generator, never the economy.
+export interface TopoGenConfig {
+  /** Total nodes on every generated board (fixed, so the economy tuning holds). */
+  nodeCount: number;
+  /** World spacing between grid cells, matching the hand-authored board. */
+  spacing: number;
+  /** Routers per board, inclusive range (one is the core hub, rest are switches). */
+  routers: [min: number, max: number];
+  /** Servers per board, inclusive range. */
+  servers: [min: number, max: number];
+  /** Target fraction of nodes with EDR coverage (~MERIDIAN's 58 percent). */
+  edrCoverage: number;
+  /**
+   * Extra cables added beyond the connecting spanning tree, inclusive range.
+   * These create cycles and cross-segment links: the structural variety knob.
+   * Higher means more spread paths and weaker isolation, so this is the first
+   * value the balance gate tightens if greedy drops out of band.
+   */
+  extraEdges: [min: number, max: number];
+}
+
+export const GEN_CONFIG: TopoGenConfig = {
+  nodeCount: 24,
+  spacing: 2.2,
+  // Two routers means a single segment switch holding every workstation: a
+  // degree-17 hub that cascades the moment it lights up. The balance gate
+  // measured that at greedy ~35 percent / random ~10 percent, so the minimum
+  // is three routers (two or three segment switches), which distributes the
+  // workstations and matches the hand-authored board's hub sizes.
+  routers: [3, 4],
+  servers: [4, 6],
+  edrCoverage: 0.58,
+  // Pinned to zero by the balance gate. Cross-segment cycles give the worm
+  // alternate spread paths and weaken isolation; each ~0.5 average cross-links
+  // measured a ~3 point drop in the random (casual) win rate, taking it below
+  // the 15 percent floor. Structural variety therefore comes from the
+  // tree-preserving dimensions (segment count, server count, workstation split,
+  // coverage gap, layout), not from cycles. Raising this needs a new balance
+  // decision, not a generator tweak.
+  extraEdges: [0, 0],
+};

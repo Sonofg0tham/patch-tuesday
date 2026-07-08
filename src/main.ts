@@ -12,7 +12,9 @@ import '@fontsource/fira-code/500.css';
 import './ui/style.css';
 
 import { applyPaletteToCss } from './config/palette';
-import { loadTopology } from './data/topology';
+import { scenarioById } from './data/scenarios';
+import { randomSeed } from './data/seed';
+import { recordRun } from './data/storage';
 import { createScene, resizeIfNeeded, clampPan } from './render/scene';
 import { createBoard } from './render/board';
 import { createPointerPicker } from './render/picking';
@@ -22,15 +24,28 @@ import { createRoster } from './ui/roster';
 import { createHud } from './ui/hud';
 import { createDebug } from './ui/debug';
 import { createActionBar } from './ui/actions';
-import { createEndScreen } from './ui/endscreen';
+import { createPirScreen } from './ui/pir';
+import { createBriefing } from './ui/briefing';
 import { SIM_CONFIG } from './sim/config';
 import { createInitialState, toVisibleView, blastRadius, encryptedCount } from './sim/worm';
 import { applyPlayerAction, endTurn } from './sim/game';
+import { RunRecorder, buildPir, type RunRecord } from './sim/pir';
 import type { ActionKind, GameState, PlayerAction, TurnEvent, VisibleState } from './sim/types';
 
 applyPaletteToCss();
 
-const topology = loadTopology();
+// Entry resolution. A `scenario` query param means a run is in progress (the
+// briefing navigated here, or this is a shared/replayed link); its absence
+// means a fresh visit, so we show the incident briefing over a live backdrop of
+// the hand-authored board. The seed comes from ?seed= for reproducible runs,
+// otherwise a fresh one is minted.
+const params = new URLSearchParams(window.location.search);
+const scenarioParam = params.get('scenario');
+const briefMode = scenarioParam === null;
+const scenario = scenarioById(scenarioParam);
+const seed = params.get('seed') ?? randomSeed();
+const topology = scenario.build(seed);
+
 const context = createScene(topology);
 const board = createBoard(topology);
 context.scene.add(board.group);
@@ -39,14 +54,17 @@ const overlay = createOverlay(topology);
 const hud = createHud();
 const rosterContainer = mustFind('roster');
 const debug = createDebug(mustFind('debug'));
-const endScreen = createEndScreen(mustFind('endscreen'));
+const pirScreen = createPirScreen(mustFind('pir'));
 const animator = createSpreadAnimator(board, topology);
 
-// The seed comes from ?seed= for reproducible debugging, otherwise a fresh
-// random one is minted so each visit is a new incident.
-const seed = new URLSearchParams(window.location.search).get('seed') ?? randomSeed();
+// The war-room header names the estate under attack.
+mustFind('hud-subtitle').textContent = topology.name;
 
-let state: GameState = createInitialState(topology, seed);
+const initialState: GameState = createInitialState(topology, seed);
+// Records the run's events and downtime for the Post-Incident Review, with the
+// same protocol the headless bots use, so a played review is built identically.
+const recorder = new RunRecorder();
+let state: GameState = initialState;
 let currentView: Record<string, VisibleState> = toVisibleView(state, topology);
 let lastEvents: TurnEvent[] = [];
 let selectedId: string | null = null;
@@ -129,7 +147,26 @@ function endGame(): void {
   if (ended) return;
   ended = true;
   setInputsEnabled(false);
-  endScreen.show(state, topology.nodes.length);
+
+  const record: RunRecord = {
+    scenarioName: topology.name,
+    seed,
+    initial: initialState,
+    final: state,
+    log: recorder.log,
+    downtimeHours: recorder.downtimeHours,
+  };
+  const pir = buildPir(record, topology);
+  recordRun({
+    scenarioId: scenario.id,
+    scenarioName: topology.name,
+    seed,
+    rating: pir.rating,
+    blastPct: Math.round(blastRadius(state) * 100),
+    turns: state.turn,
+    won: state.status === 'won',
+  });
+  pirScreen.show(pir, scenario.id, seed);
 }
 
 // Applies one player action to the selected node (or none, for emergency),
@@ -143,6 +180,7 @@ function act(kind: ActionKind): void {
   }
   const action: PlayerAction = { kind, node: needsNode ? (selectedId ?? undefined) : undefined };
   const result = applyPlayerAction(state, action, topology);
+  if (result.ok) recorder.record(state.turn, result.events);
   state = result.state;
   actionBar.setReason(result.ok ? '' : (result.reason ?? ''), result.ok);
   renderState();
@@ -175,9 +213,12 @@ createPointerPicker(context, board, {
 hud.onEndTurn(() => {
   if (animator.isPlaying() || state.status !== 'playing') return;
   const before = currentView;
+  const turnNow = state.turn;
   const result = endTurn(state, topology);
   state = result.nextState;
   lastEvents = result.events;
+  recorder.record(turnNow, result.events);
+  recorder.tickDowntime(state);
   currentView = toVisibleView(state, topology);
   // Announce any business override the turn it happens; blank turns clear it.
   const overrides = lastEvents.filter(
@@ -211,6 +252,13 @@ hud.setSeed(seed);
 select(null);
 renderState();
 
+// Fresh visit: the incident briefing sits over the board as a backdrop. Play
+// inputs are locked until the player begins a run (which reloads with params).
+if (briefMode) {
+  setInputsEnabled(false);
+  createBriefing(mustFind('briefing')).show();
+}
+
 // Rolling fps: count frames and refresh the readout twice a second.
 let frames = 0;
 let windowStart = performance.now();
@@ -235,11 +283,6 @@ function tick(): void {
 
 tick();
 
-// A short random seed: readable, URL-safe, enough entropy for run variety.
-function randomSeed(): string {
-  return Math.floor(Math.random() * 0xffffffff).toString(36).toUpperCase();
-}
-
 function mustFind(id: string): HTMLElement {
   const element = document.getElementById(id);
   if (!element) throw new Error(`#${id} missing from index.html`);
@@ -259,16 +302,23 @@ declare global {
     };
     __sim: {
       seed: string;
+      scenario: string;
+      topology: string;
+      nodeCount: () => number;
       turn: () => number;
       status: () => string;
       ap: () => number;
       score: () => number;
       pressure: () => number;
       encrypted: () => number;
+      initialEncrypted: () => number;
       trueView: () => Record<string, string>;
       visibleView: () => Record<string, VisibleState>;
       act: (kind: ActionKind, node?: string) => { ok: boolean; reason?: string };
       endTurnInstant: (n: number) => void;
+      /** The log length and the built review, for verifying findings match events. */
+      logLength: () => number;
+      pir: () => ReturnType<typeof buildPir>;
     };
   }
 }
@@ -293,24 +343,46 @@ window.__spikeBench = (benchFrames = 120) => {
 // not part of normal play.
 window.__sim = {
   seed,
+  scenario: scenario.id,
+  topology: topology.name,
+  nodeCount: () => topology.nodes.length,
   turn: () => state.turn,
   status: () => state.status,
   ap: () => state.ap,
   pressure: () => state.pressure,
   score: () => state.score,
   encrypted: () => encryptedCount(state),
+  initialEncrypted: () => encryptedCount(initialState),
   trueView: () => Object.fromEntries(Object.entries(state.nodes).map(([id, ns]) => [id, ns.state])),
   visibleView: () => ({ ...currentView }),
   act(kind, node) {
     const result = applyPlayerAction(state, { kind, node }, topology);
+    if (result.ok) recorder.record(state.turn, result.events);
     state = result.state;
     renderState();
     return { ok: result.ok, reason: result.reason };
   },
   endTurnInstant(n: number) {
     for (let i = 0; i < n && state.status === 'playing'; i += 1) {
-      state = endTurn(state, topology).nextState;
+      const turnNow = state.turn;
+      const resolved = endTurn(state, topology);
+      recorder.record(turnNow, resolved.events);
+      state = resolved.nextState;
+      recorder.tickDowntime(state);
     }
     renderState();
   },
+  logLength: () => recorder.log.length,
+  pir: () =>
+    buildPir(
+      {
+        scenarioName: topology.name,
+        seed,
+        initial: initialState,
+        final: state,
+        log: recorder.log,
+        downtimeHours: recorder.downtimeHours,
+      },
+      topology,
+    ),
 };

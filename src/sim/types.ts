@@ -55,6 +55,8 @@ export interface GameState {
   findings: Finding[];
   status: 'playing' | 'won' | 'lost';
   lossReason?: 'domain-controller' | 'blast-radius';
+  /** The node the worm entered on, for the PIR's initial-access finding. */
+  patientZero?: string;
 }
 
 // The six player actions. `node` is omitted only for the emergency budget.

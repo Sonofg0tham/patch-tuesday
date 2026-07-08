@@ -28,7 +28,7 @@ A network of roughly 24 nodes connected by visible cables, rendered as low-poly 
 - **The Backup Node**: holds your restore credits. If it's encrypted, no more restores this run.
 - **Routers**: junctions with many links. Isolating one is powerful and expensive in downtime.
 
-v1 ships one hand-authored topology defined in JSON. Phase 4 adds seeded procedural layouts for run variety.
+v1 ships the hand-authored topology (the MERIDIAN MUTUAL scenario, defined in JSON) alongside seeded procedural estates (RANDOM ESTATE), added in Phase 4. The generator's constraints are derived from the measured hand-authored board and held inside the balance gate, so procedural boards vary the layout without moving the difficulty.
 
 ## The threat (v1: the WORM)
 
@@ -72,8 +72,10 @@ One page, Fira Code, generated from the actual run. The sibling of Tailgate's En
 
 - Metrics: time to detect, time to contain, blast radius (percent of estate encrypted), downtime hours from isolation, backup credits burned, whether emergency change control was bypassed.
 - Findings drawn from real events with in-fiction timestamps ("Finding: EDR coverage gap on FINANCE-02 allowed undetected lateral movement, T+04h. Severity: High").
-- Rating: **NEAR MISS** (nothing encrypted, ever), **CONTAINED** (blast radius under 25 percent, crown jewels intact), **REPORTABLE INCIDENT** (blast radius 25-60 percent: the regulator hears about this), **TOTAL LOSS** (defeat).
-- [ NEW INCIDENT ] resets cleanly. Best ratings persist in localStorage.
+- Rating: **NEAR MISS** (no additional encryption after detection), **CONTAINED** (blast radius under 25 percent, crown jewels intact), **REPORTABLE INCIDENT** (blast radius 25-60 percent: the regulator hears about this), **TOTAL LOSS** (defeat).
+  - NEAR MISS was redefined in Phase 4. Dwell (3 turns) means a node can arrive already encrypted at T+01h, so "nothing encrypted, ever" is unreachable on some seeds through no fault of the player. You are judged on the response, not the inherited dwell, so NEAR MISS is now "no encryption after detection". A run can be a NEAR MISS with an inherited encrypted node on the board. CONTAINED / REPORTABLE / TOTAL LOSS are unchanged.
+  - Time to detect is where the dwell is revealed to the player for the first time: "initial access preceded detection by 3 hours".
+- [ NEW INCIDENT ] resets cleanly. Best rating per named scenario and a short run history persist in localStorage.
 
 ## Visual direction
 
@@ -111,6 +113,7 @@ Done when: a full incident is winnable and losable, and every action's trade-off
 
 **Phase 4, the run.** Seeded procedural topologies within tuned constraints, run stats collection, the Post-Incident Review generating from real run data with all four ratings reachable, localStorage bests, [ NEW INCIDENT ].
 Done when: the PIR accurately narrates any run, all four ratings have been reached and documented in the PR.
+Shipped: a seeded generator (`src/data/topology-gen.ts`, constraints in `GEN_CONFIG`) building hub-and-spoke estates whose properties are derived from the measured hand-authored board; MERIDIAN MUTUAL kept as a named scenario alongside RANDOM ESTATE (`src/data/scenarios.ts`); the incident-briefing entry screen; the real PIR (`src/sim/pir.ts` for the logic, `src/ui/pir.ts` for the page) with the redefined NEAR MISS; localStorage best-per-scenario and run history. The balance gate (`npm run gen`) proved the locked economy survives procedural variety (greedy 66 percent, random 19 percent over 4,000 generated boards). The generator's structural variety was capped by that gate: cross-segment cycles measurably collapsed the casual-play floor, so `extraEdges` is pinned to zero and every board is a spanning tree. Widening it needs a new balance decision, per the Phase 3.10 lock.
 
 **Phase 5, the war room.** Lighting drama, infection creep animated along cables, encryption transitions, the full synthesised audio pass, juice (camera easing, shake with toggle), UI polish to the identity spec.
 Done when: a 30-second clip of a spread phase looks and sounds like a finished game.

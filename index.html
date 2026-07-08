@@ -57,8 +57,11 @@
     <!-- Debug overlay, hidden until toggled with the 'd' key. -->
     <aside id="debug" aria-hidden="true"></aside>
 
-    <!-- Placeholder end screen (the real Post-Incident Review is Phase 4). -->
-    <div id="endscreen" hidden></div>
+    <!-- The Post-Incident Review: the one-page reckoning, built in ui/pir.ts. -->
+    <div id="pir" hidden></div>
+
+    <!-- The incident-briefing entry screen, built in ui/briefing.ts. -->
+    <div id="briefing" hidden></div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
