@@ -39,14 +39,28 @@ export interface SpreadAnimator {
   update(nowSeconds: number): void;
   isPlaying(): boolean;
   onComplete(callback: () => void): void;
+  /** A node's infection just became visible (a creep landed). For audio sync. */
+  onReveal(callback: (nodeId: string) => void): void;
+  /** A node just encrypted. For the encryption sting, synced to the visual. */
+  onLock(callback: (nodeId: string) => void): void;
 }
 
 export function createSpreadAnimator(board: Board, topology: Topology): SpreadAnimator {
   const creepGeometry = new THREE.SphereGeometry(CREEP_RADIUS, 12, 12);
-  const creepMaterial = new THREE.MeshBasicMaterial({ color: palette.infection });
+  // A glowing magenta bead travelling the cable, additive so it reads as light
+  // running along the wiring into the target.
+  const creepMaterial = new THREE.MeshBasicMaterial({
+    color: palette.infection,
+    transparent: true,
+    opacity: 0.95,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
   let steps: Step[] = [];
   let active = false;
   let completeCallback: () => void = () => {};
+  let revealCallback: (nodeId: string) => void = () => {};
+  let lockCallback: (nodeId: string) => void = () => {};
 
   function cablePoint(nodeId: string): THREE.Vector3 {
     const node = topology.byId.get(nodeId);
@@ -141,7 +155,11 @@ export function createSpreadAnimator(board: Board, topology: Topology): SpreadAn
       }
       if (t >= 1) {
         if (step.mesh) board.group.remove(step.mesh);
-        board.setVisibleState(step.node, step.finalState);
+        // animate=true runs the board's encryption transition (ignite + die)
+        // rather than snapping the state; harmless for the infected reveal.
+        board.setVisibleState(step.node, step.finalState, true);
+        if (step.finalState === 'encrypted') lockCallback(step.node);
+        else if (step.finalState === 'infected') revealCallback(step.node);
         step.done = true;
       } else {
         allDone = false;
@@ -163,6 +181,12 @@ export function createSpreadAnimator(board: Board, topology: Topology): SpreadAn
     },
     onComplete(callback) {
       completeCallback = callback;
+    },
+    onReveal(callback) {
+      revealCallback = callback;
+    },
+    onLock(callback) {
+      lockCallback = callback;
     },
   };
 }
