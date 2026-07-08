@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { MapControls } from 'three/addons/controls/MapControls.js';
 import { palette } from '../config/palette';
+import { VISUAL_CONFIG } from '../config/visual';
 import type { Topology } from '../data/topology';
 
 const MAX_NODE_HEIGHT = 2.4; // the domain controller, the tallest silhouette
@@ -31,6 +32,11 @@ export function createScene(topology: Topology): SceneContext {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(palette.base);
+  // A breath of atmospheric fog so the far edge of the estate recedes into the
+  // dark, the war-room-display depth. Thinned as the visibility floor rises so
+  // the nystagmus setting never buries a distant node in haze.
+  const fogDensity = 0.014 * (1 - VISUAL_CONFIG.visibilityFloor);
+  scene.fog = new THREE.FogExp2(palette.base, fogDensity);
 
   const camera = new THREE.PerspectiveCamera(
     50,
@@ -48,9 +54,9 @@ export function createScene(topology: Topology): SceneContext {
 
   fitCameraToBoard(camera, controls, topology);
 
-  // One dramatic key light with shadows plus a dim fill so shadowed faces
-  // stay readable against the near-black background.
-  const keyLight = new THREE.DirectionalLight(palette.keyLight, 2.2);
+  // One dramatic key light with shadows. Kept punchy for the war-room contrast;
+  // the readability comes from the ambient floor below, not from flattening this.
+  const keyLight = new THREE.DirectionalLight(palette.keyLight, 2.4);
   keyLight.position.set(
     topology.halfWidth + 6,
     Math.max(topology.halfWidth, topology.halfDepth) + 12,
@@ -66,7 +72,23 @@ export function createScene(topology: Topology): SceneContext {
   keyLight.shadow.camera.near = 1;
   keyLight.shadow.camera.far = keyLight.position.length() + extent * 2;
   scene.add(keyLight);
-  scene.add(new THREE.AmbientLight(palette.accent, 0.25));
+
+  // A cool cyan uplight from the floor gives the infrastructure its war-room
+  // glow from below, and a hemisphere fill lifts shadowed faces. The ambient
+  // floor scales with the nystagmus visibility knob: darker and more cinematic
+  // at 0, flatter and maximally legible at 1.
+  const floor = VISUAL_CONFIG.visibilityFloor;
+  scene.add(new THREE.AmbientLight(palette.accent, 0.12 + 0.5 * floor));
+  scene.add(new THREE.HemisphereLight(palette.keyLight, palette.accent, 0.18 + 0.4 * floor));
+
+  // The domain controller is the crown of the board: a dedicated cyan point
+  // light picks it out of the dark so the eye lands on the crown jewels first.
+  const dc = topology.nodes.find((n) => n.type === 'domain-controller');
+  if (dc) {
+    const crown = new THREE.PointLight(palette.accent, 6 + 6 * (1 - floor), 14, 2);
+    crown.position.set(dc.x, MAX_NODE_HEIGHT + 3, dc.z);
+    scene.add(crown);
+  }
 
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(200, 200),
