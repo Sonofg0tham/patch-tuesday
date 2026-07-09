@@ -44,6 +44,8 @@ export interface Pir {
   seed: string;
   rating: Rating;
   won: boolean;
+  /** The player walked away mid-incident: shown as ABANDONED, not rated. */
+  abandoned: boolean;
   metrics: PirMetric[];
   findings: PirFinding[];
 }
@@ -64,6 +66,8 @@ export interface RunRecord {
   log: LoggedEvent[];
   /** Node-hours of isolation downtime accrued over the run. */
   downtimeHours: number;
+  /** The run was abandoned mid-incident from the pause menu. */
+  abandoned?: boolean;
 }
 
 // Accumulates the event log and downtime as a run plays, so interactive and
@@ -133,6 +137,7 @@ export function buildPir(
 
   const rating = ratingOf(record);
   const won = final.status === 'won';
+  const abandoned = record.abandoned ?? false;
   const total = topology.nodes.length;
   const dwell = config.dwellTurns;
 
@@ -145,7 +150,11 @@ export function buildPir(
     { label: 'Time to detect', value: `${TPLUS(1)} (initial access preceded detection by ${dwell} hours)` },
     {
       label: 'Time to contain',
-      value: won ? TPLUS(final.turn) : `not contained (incident lost at ${TPLUS(final.turn)})`,
+      value: abandoned
+        ? `response abandoned at ${TPLUS(final.turn)}`
+        : won
+          ? TPLUS(final.turn)
+          : `not contained (incident lost at ${TPLUS(final.turn)})`,
     },
     {
       label: 'Blast radius',
@@ -250,5 +259,5 @@ export function buildPir(
   // Order by hour, then by severity within the hour.
   findings.sort((a, b) => a.turn - b.turn || SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
 
-  return { scenarioName: record.scenarioName, seed: record.seed, rating, won, metrics, findings };
+  return { scenarioName: record.scenarioName, seed: record.seed, rating, won, abandoned, metrics, findings };
 }

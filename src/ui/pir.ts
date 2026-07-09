@@ -50,13 +50,16 @@ export function createPirScreen(container: HTMLElement): PirScreen {
       sub.textContent = `${pir.scenarioName}  ·  seed ${pir.seed}`;
       head.append(title, sub);
 
-      // Rating stamp + verdict.
+      // Rating stamp + verdict. An abandoned run is not rated: it carries the
+      // ABANDONED stamp instead, and does not update any best.
       const stamp = document.createElement('div');
-      stamp.className = `pir-rating ${ratingClass(pir.rating)}`;
-      stamp.textContent = pir.rating;
+      stamp.className = `pir-rating ${pir.abandoned ? 'mid' : ratingClass(pir.rating)}`;
+      stamp.textContent = pir.abandoned ? 'ABANDONED' : pir.rating;
       const verdict = document.createElement('div');
       verdict.className = 'pir-verdict';
-      verdict.textContent = VERDICT[pir.rating];
+      verdict.textContent = pir.abandoned
+        ? 'The response was abandoned before the incident was resolved. Recorded, but not rated.'
+        : VERDICT[pir.rating];
 
       // Metrics.
       const metrics = document.createElement('dl');

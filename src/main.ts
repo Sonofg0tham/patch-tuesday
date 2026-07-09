@@ -17,6 +17,7 @@ import { createScreenShake } from './render/shake';
 import { scenarioById } from './data/scenarios';
 import { randomSeed } from './data/seed';
 import { recordRun } from './data/storage';
+import { applyDomSettings, masterVolume } from './data/settings';
 import { createScene, resizeIfNeeded, clampPan } from './render/scene';
 import { createBoard } from './render/board';
 import { createPointerPicker } from './render/picking';
@@ -27,7 +28,9 @@ import { createHud } from './ui/hud';
 import { createDebug } from './ui/debug';
 import { createActionBar } from './ui/actions';
 import { createPirScreen } from './ui/pir';
-import { createBriefing } from './ui/briefing';
+import { createRunbook } from './ui/menu';
+import { createSettingsPanel } from './ui/settings-panel';
+import { createPauseMenu } from './ui/pause';
 import { SIM_CONFIG } from './sim/config';
 import { createInitialState, toVisibleView, blastRadius, encryptedCount } from './sim/worm';
 import { applyPlayerAction, endTurn } from './sim/game';
@@ -35,6 +38,10 @@ import { RunRecorder, buildPir, type RunRecord } from './sim/pir';
 import type { ActionKind, GameState, PlayerAction, TurnEvent, VisibleState } from './sim/types';
 
 applyPaletteToCss();
+// Player settings: DOM-level ones (text scale, high contrast, reduced-motion
+// class) apply immediately; the render-baked ones (visibility floor) are read
+// as the scene and board are built just below.
+applyDomSettings();
 
 // Entry resolution. A `scenario` query param means a run is in progress (the
 // briefing navigated here, or this is a shared/replayed link); its absence
@@ -65,6 +72,7 @@ const shake = createScreenShake();
 // user gesture, so nothing tries to make noise (or warns) before then.
 function unlockAudio(): void {
   audio.unlock();
+  audio.setMasterVolume(masterVolume());
   window.removeEventListener('pointerdown', unlockAudio);
   window.removeEventListener('keydown', unlockAudio);
 }
@@ -93,6 +101,7 @@ let currentView: Record<string, VisibleState> = toVisibleView(state, topology);
 let lastEvents: TurnEvent[] = [];
 let selectedId: string | null = null;
 let ended = false;
+let paused = false;
 
 // Highlight = whatever the user is pointing at or has keyboard-focused.
 // Selection = what the user chose to act on. Pointer hover wins over keyboard.
@@ -174,7 +183,7 @@ function setInputsEnabled(enabled: boolean): void {
   actionBar.setEnabled(enabled);
 }
 
-function endGame(): void {
+function endGame(abandoned = false): void {
   if (ended) return;
   ended = true;
   setInputsEnabled(false);
@@ -186,6 +195,7 @@ function endGame(): void {
     final: state,
     log: recorder.log,
     downtimeHours: recorder.downtimeHours,
+    abandoned,
   };
   const pir = buildPir(record, topology);
   recordRun({
@@ -196,10 +206,13 @@ function endGame(): void {
     blastPct: Math.round(blastRadius(state) * 100),
     turns: state.turn,
     won: state.status === 'won',
+    abandoned,
   });
   // The room's verdict: a flat dead-line on defeat (with a jolt), a quietly
-  // triumphant but exhausted note on containment.
-  if (state.status === 'lost') {
+  // triumphant but exhausted note on containment. An abandoned run just files.
+  if (abandoned) {
+    // no fanfare
+  } else if (state.status === 'lost') {
     audio.play('defeat');
     shake.add(1);
   } else {
@@ -212,7 +225,7 @@ function endGame(): void {
 // Applies one player action to the selected node (or none, for emergency),
 // shows the outcome, and re-renders. Blocked actions surface their reason.
 function act(kind: ActionKind): void {
-  if (animator.isPlaying() || state.status !== 'playing') return;
+  if (paused || animator.isPlaying() || state.status !== 'playing') return;
   const needsNode = kind !== 'emergency';
   if (needsNode && !selectedId) {
     actionBar.setReason('select a node first', false);
@@ -254,7 +267,7 @@ createPointerPicker(context, board, {
 // End Turn: resolve the turn in the sim, refresh the HUD immediately, then let
 // the animator replay the spread. Inputs are locked until the replay finishes.
 hud.onEndTurn(() => {
-  if (animator.isPlaying() || state.status !== 'playing') return;
+  if (paused || animator.isPlaying() || state.status !== 'playing') return;
   const before = currentView;
   const turnNow = state.turn;
   const result = endTurn(state, topology);
@@ -302,11 +315,48 @@ hud.setSeed(seed);
 select(null);
 renderState();
 
-// Fresh visit: the incident briefing sits over the board as a backdrop. Play
-// inputs are locked until the player begins a run (which reloads with params).
+// Settings panel, shared by the runbook menu and the pause menu. Master volume
+// applies live; the DOM-level settings are applied by saveSettings itself.
+const settingsPanel = createSettingsPanel(mustFind('settings'), {
+  onChange: (s) => audio.setMasterVolume(s.masterVolume),
+  onClose: () => {},
+});
+
 if (briefMode) {
+  // Fresh visit: the runbook menu sits over a live backdrop of the board. Play
+  // inputs stay locked until the player begins a run (which reloads with params).
   setInputsEnabled(false);
-  createBriefing(mustFind('briefing')).show();
+  createRunbook(mustFind('menu'), { onSettings: () => settingsPanel.open() }).show();
+} else {
+  // In a run: Escape opens the pause menu. Abandoning files the PIR for the run
+  // so far, marked ABANDONED.
+  const pauseMenu = createPauseMenu(mustFind('pause'), {
+    onResume: () => {
+      paused = false;
+      if (state.status === 'playing' && !animator.isPlaying()) setInputsEnabled(true);
+    },
+    onSettings: () => settingsPanel.open(),
+    onAbandon: () => {
+      pauseMenu.close();
+      endGame(true);
+    },
+  });
+
+  window.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    if (settingsPanel.isOpen()) {
+      settingsPanel.close();
+      return;
+    }
+    if (ended) return;
+    if (pauseMenu.isOpen()) {
+      pauseMenu.close();
+    } else {
+      paused = true;
+      setInputsEnabled(false);
+      pauseMenu.open();
+    }
+  });
 }
 
 // Rolling fps: count frames and refresh the readout twice a second.

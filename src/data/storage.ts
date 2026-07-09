@@ -16,6 +16,8 @@ export interface RunHistoryEntry {
   blastPct: number;
   turns: number;
   won: boolean;
+  /** The run was walked away from: recorded in history, never a best. */
+  abandoned?: boolean;
 }
 
 interface Store {
@@ -59,9 +61,13 @@ function save(store: Store): void {
 // it, and prepends it to the capped history. Returns the updated store.
 export function recordRun(entry: RunHistoryEntry): Store {
   const store = load();
-  const prev = store.bestByScenario[entry.scenarioId];
-  if (!prev || RATING_RANK[entry.rating] > RATING_RANK[prev]) {
-    store.bestByScenario[entry.scenarioId] = entry.rating;
+  // Abandoned runs are recorded in history but never count as a best: you get
+  // no credit for walking away.
+  if (!entry.abandoned) {
+    const prev = store.bestByScenario[entry.scenarioId];
+    if (!prev || RATING_RANK[entry.rating] > RATING_RANK[prev]) {
+      store.bestByScenario[entry.scenarioId] = entry.rating;
+    }
   }
   store.history = [entry, ...store.history].slice(0, HISTORY_CAP);
   save(store);

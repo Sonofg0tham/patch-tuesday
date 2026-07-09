@@ -14,7 +14,17 @@ served from our own domain. Nothing is fetched from a CDN at runtime.
 | Chakra Petch | Display: menus, headings | [SIL Open Font License 1.1](https://openfontlicense.org) | [Fontsource](https://fontsource.org/fonts/chakra-petch), design by Cadson Demak |
 | Fira Code | Monospace: HUD readouts, the PIR | [SIL Open Font License 1.1](https://openfontlicense.org) | [Fontsource](https://fontsource.org/fonts/fira-code), design by Nikita Prokopov |
 
+## Favicon
+
+`public/favicon.svg` is a hand-authored SVG mark (a clean cyan node cabled to
+an infected magenta one), written by hand in the project's own palette. It was
+not exported from any third-party tool or library and carries no external
+licence, CC0 by construction like the rest of the visuals.
+
 ## Everything else
 
-Nothing else. If an asset appears in the repo without an entry here, that is
-a bug.
+Audit, Phase 6: the only third-party assets in the repo are the two OFL fonts
+above. There are no texture, model, or audio files, and the only image is the
+hand-authored favicon. Everything on the board and in the soundscape is
+generated in code at runtime. If any other asset appears in the repo without an
+entry here, that is a bug.

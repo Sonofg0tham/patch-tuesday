@@ -4,7 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
-    <title>Patch Tuesday</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Patch Tuesday — incident response tactics</title>
+    <meta
+      name="description"
+      content="A turn-based incident response tactics game. Ransomware spreads across a 3D network; you're the incident lead. Contain it, spend your backups wisely, and file the Post-Incident Review. Every mechanic is real IR tradecraft."
+    />
   </head>
   <body>
     <!-- The 3D canvas renders the board. All UI lives in the DOM overlay. -->
@@ -60,8 +65,10 @@
     <!-- The Post-Incident Review: the one-page reckoning, built in ui/pir.ts. -->
     <div id="pir" hidden></div>
 
-    <!-- The incident-briefing entry screen, built in ui/briefing.ts. -->
-    <div id="briefing" hidden></div>
+    <!-- The runbook main menu, the mid-run pause menu, and the settings panel. -->
+    <div id="menu" hidden></div>
+    <div id="pause" hidden></div>
+    <div id="settings" hidden></div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

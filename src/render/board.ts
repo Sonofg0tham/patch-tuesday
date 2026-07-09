@@ -11,7 +11,8 @@
 
 import * as THREE from 'three';
 import { palette } from '../config/palette';
-import { VISUAL_CONFIG, prefersReducedMotion } from '../config/visual';
+import { VISUAL_CONFIG } from '../config/visual';
+import { effectivePulseScale, motionReduced } from '../data/settings';
 import type { NodeType, Topology, TopologyNode } from '../data/topology';
 import { NODE_TYPES } from '../data/topology';
 import type { VisibleState } from '../sim/types';
@@ -352,9 +353,11 @@ export function createBoard(topology: Topology): Board {
     for (const record of cablesByNode.get(nodeId) ?? []) refreshCableLook(record);
   }
 
-  const reducedMotion = prefersReducedMotion();
-  const pulseAmp = VISUAL_CONFIG.pulseAmplitude * (reducedMotion ? 0.4 : 1);
-  const impact = reducedMotion ? 0 : VISUAL_CONFIG.encryptImpactScale;
+  // Motion is a required state cue, so the pulse survives every level, just
+  // gentler as it drops. The encryption punch is optional juice, off when the
+  // player asked for reduced motion.
+  const pulseAmp = VISUAL_CONFIG.pulseAmplitude * effectivePulseScale();
+  const impact = motionReduced() ? 0 : VISUAL_CONFIG.encryptImpactScale;
 
   function tick(elapsed: number): void {
     // Infected pulse: the halos of visibly infected nodes breathe. Motion is a

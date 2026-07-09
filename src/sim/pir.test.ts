@@ -43,6 +43,7 @@ function record(overrides: {
   final: GameState;
   log?: LoggedEvent[];
   downtimeHours?: number;
+  abandoned?: boolean;
 }): RunRecord {
   return {
     scenarioName: topology.name,
@@ -51,6 +52,7 @@ function record(overrides: {
     final: overrides.final,
     log: overrides.log ?? [],
     downtimeHours: overrides.downtimeHours ?? 0,
+    abandoned: overrides.abandoned,
   };
 }
 
@@ -151,6 +153,16 @@ describe('PIR findings', () => {
     // Within T+05h, Critical (DC) comes before Low (WS).
     const t5 = pir.findings.filter((f) => f.turn === 5);
     expect(t5[0].text.startsWith('DC-01')).toBe(true);
+  });
+});
+
+describe('PIR abandoned runs', () => {
+  it('marks an abandoned run and reframes time-to-contain', () => {
+    const final = makeGameState(nodesWith(['WS-1']), { status: 'playing', turn: 4 });
+    const pir = buildPir(record({ final, log: [], abandoned: true }), topology);
+    expect(pir.abandoned).toBe(true);
+    const contain = pir.metrics.find((m) => m.label === 'Time to contain')?.value ?? '';
+    expect(contain).toBe('response abandoned at T+04h');
   });
 });
 
