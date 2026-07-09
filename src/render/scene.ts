@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { MapControls } from 'three/addons/controls/MapControls.js';
 import { palette } from '../config/palette';
-import { VISUAL_CONFIG } from '../config/visual';
+import { effectiveVisibilityFloor } from '../data/settings';
 import type { Topology } from '../data/topology';
 
 const MAX_NODE_HEIGHT = 2.4; // the domain controller, the tallest silhouette
@@ -35,7 +35,7 @@ export function createScene(topology: Topology): SceneContext {
   // A breath of atmospheric fog so the far edge of the estate recedes into the
   // dark, the war-room-display depth. Thinned as the visibility floor rises so
   // the nystagmus setting never buries a distant node in haze.
-  const fogDensity = 0.014 * (1 - VISUAL_CONFIG.visibilityFloor);
+  const fogDensity = 0.014 * (1 - effectiveVisibilityFloor());
   scene.fog = new THREE.FogExp2(palette.base, fogDensity);
 
   const camera = new THREE.PerspectiveCamera(
@@ -77,7 +77,7 @@ export function createScene(topology: Topology): SceneContext {
   // glow from below, and a hemisphere fill lifts shadowed faces. The ambient
   // floor scales with the nystagmus visibility knob: darker and more cinematic
   // at 0, flatter and maximally legible at 1.
-  const floor = VISUAL_CONFIG.visibilityFloor;
+  const floor = effectiveVisibilityFloor();
   scene.add(new THREE.AmbientLight(palette.accent, 0.12 + 0.5 * floor));
   scene.add(new THREE.HemisphereLight(palette.keyLight, palette.accent, 0.18 + 0.4 * floor));
 

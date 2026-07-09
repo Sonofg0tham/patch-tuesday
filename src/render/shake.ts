@@ -7,7 +7,7 @@
 // removes it, so the controls never accumulate drift.
 
 import * as THREE from 'three';
-import { VISUAL_CONFIG, prefersReducedMotion } from '../config/visual';
+import { effectiveShake } from '../data/settings';
 
 export interface ScreenShake {
   /** Add trauma (0..1). Overrides and defeat add a lot; encryption a little. */
@@ -17,19 +17,20 @@ export interface ScreenShake {
 }
 
 export function createScreenShake(): ScreenShake {
-  const enabled = !prefersReducedMotion() && VISUAL_CONFIG.shakeIntensity > 0;
-  const magnitude = VISUAL_CONFIG.shakeIntensity;
   const offset = new THREE.Vector3();
   let trauma = 0;
 
   return {
     add(amount) {
-      if (!enabled) return;
+      // Read live so the settings slider (and reduced motion) take effect
+      // without a reload; zero magnitude means no trauma ever builds.
+      if (effectiveShake() <= 0) return;
       trauma = Math.min(1, trauma + amount);
     },
     step(dt) {
       offset.set(0, 0, 0);
-      if (!enabled || trauma <= 0) return offset;
+      const magnitude = effectiveShake();
+      if (magnitude <= 0 || trauma <= 0) return offset;
       trauma = Math.max(0, trauma - dt * 1.8); // ~0.55s to fully settle
       const shake = magnitude * trauma * trauma;
       offset.set(
