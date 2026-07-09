@@ -12,6 +12,8 @@ import '@fontsource/fira-code/500.css';
 import './ui/style.css';
 
 import { applyPaletteToCss } from './config/palette';
+import { createAudio } from './audio/audio';
+import { createScreenShake } from './render/shake';
 import { scenarioById } from './data/scenarios';
 import { randomSeed } from './data/seed';
 import { recordRun } from './data/storage';
@@ -56,6 +58,28 @@ const rosterContainer = mustFind('roster');
 const debug = createDebug(mustFind('debug'));
 const pirScreen = createPirScreen(mustFind('pir'));
 const animator = createSpreadAnimator(board, topology);
+const audio = createAudio();
+const shake = createScreenShake();
+
+// Browser autoplay policy: the audio context is created only on the first real
+// user gesture, so nothing tries to make noise (or warns) before then.
+function unlockAudio(): void {
+  audio.unlock();
+  window.removeEventListener('pointerdown', unlockAudio);
+  window.removeEventListener('keydown', unlockAudio);
+}
+window.addEventListener('pointerdown', unlockAudio);
+window.addEventListener('keydown', unlockAudio);
+
+// The threat is audible as it moves: a tense tick as each creep lands, the
+// signature sting as a node encrypts (heavier for the crown jewels), and a
+// small camera knock on the lock.
+animator.onReveal(() => audio.play('spread'));
+animator.onLock((nodeId) => {
+  const type = topology.byId.get(nodeId)?.type;
+  audio.play(type === 'domain-controller' || type === 'backup' ? 'encrypt-heavy' : 'encrypt');
+  shake.add(0.25);
+});
 
 // The war-room header names the estate under attack.
 mustFind('hud-subtitle').textContent = topology.name;
@@ -119,6 +143,13 @@ function renderHud(): void {
   actionBar.setCredits(state.backupCredits);
   actionBar.setScore(state.score);
   hud.setPressure(state.pressure, SIM_CONFIG.pressureMax);
+  // Escalation is on the board and in the room, not just the meter: isolation
+  // rings warm with pressure, the undertone climbs, and the keyboard clatter of
+  // the war room thickens as the estate falls.
+  const pressureFraction = state.pressure / SIM_CONFIG.pressureMax;
+  board.setPressure(pressureFraction);
+  audio.setPressure(pressureFraction);
+  audio.setBlastIntensity(blastRadius(state));
 }
 
 // Full refresh: board, isolation, HUD, inspector, debug, and the end screen.
@@ -166,6 +197,15 @@ function endGame(): void {
     turns: state.turn,
     won: state.status === 'won',
   });
+  // The room's verdict: a flat dead-line on defeat (with a jolt), a quietly
+  // triumphant but exhausted note on containment.
+  if (state.status === 'lost') {
+    audio.play('defeat');
+    shake.add(1);
+  } else {
+    audio.play('contain');
+  }
+  audio.setBlastIntensity(0); // the incident is over; quiet the clatter
   pirScreen.show(pir, scenario.id, seed);
 }
 
@@ -183,6 +223,9 @@ function act(kind: ActionKind): void {
   if (result.ok) recorder.record(state.turn, result.events);
   state = result.state;
   actionBar.setReason(result.ok ? '' : (result.reason ?? ''), result.ok);
+  // A clean confirm when an action lands, a distinct denied when it is blocked
+  // (alongside the on-screen reason).
+  audio.play(result.ok ? 'confirm' : 'denied');
   renderState();
 }
 
@@ -229,6 +272,13 @@ hud.onEndTurn(() => {
       ? `Business pressure forced ${overrides.map((e) => topology.byId.get(e.node)?.label ?? e.node).join(', ')} back online`
       : '',
   );
+  // A business override gets its own event on the board and in the room: the
+  // reconnected node flashes, a phone-slam sound, and a jolt.
+  for (const e of overrides) {
+    board.flashOverride(e.node);
+    audio.play('override');
+    shake.add(0.6);
+  }
   renderHud();
   setInputsEnabled(false);
   animator.play(before, currentView);
@@ -262,17 +312,28 @@ if (briefMode) {
 // Rolling fps: count frames and refresh the readout twice a second.
 let frames = 0;
 let windowStart = performance.now();
+let lastFrame = performance.now();
 
 function tick(): void {
   requestAnimationFrame(tick);
+  const now = performance.now();
+  const dt = Math.min(0.1, (now - lastFrame) / 1000); // clamp long tab-away gaps
+  lastFrame = now;
+
   resizeIfNeeded(context);
   context.controls.update();
   clampPan(context, topology);
-  animator.update(performance.now() / 1000);
+  animator.update(now / 1000);
+  board.tick(now / 1000); // pulse, encryption transitions, override flashes
+
+  // Screen shake: apply a transient camera offset for the render, then remove
+  // it so the controls never accumulate drift. A no-op at the calm default.
+  const offset = shake.step(dt);
+  context.camera.position.add(offset);
   context.renderer.render(context.scene, context.camera);
+  context.camera.position.sub(offset);
 
   frames += 1;
-  const now = performance.now();
   const elapsed = now - windowStart;
   if (elapsed >= 500) {
     overlay.setFps((frames * 1000) / elapsed);
@@ -326,9 +387,16 @@ declare global {
 window.__spikeBench = (benchFrames = 120) => {
   const times: number[] = [];
   for (let i = 0; i < benchFrames; i += 1) {
-    const start = performance.now();
+    const now = performance.now();
+    // The full per-frame pipeline with everything on: the presentation tick
+    // (pulse, transitions, flashes), the shake sample, and the render. This is
+    // the honest frame cost, not just the draw call.
+    board.tick(now / 1000);
+    const offset = shake.step(0.016);
+    context.camera.position.add(offset);
     context.renderer.render(context.scene, context.camera);
-    times.push(performance.now() - start);
+    context.camera.position.sub(offset);
+    times.push(performance.now() - now);
   }
   const total = times.reduce((sum, t) => sum + t, 0);
   return {
