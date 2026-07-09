@@ -29,6 +29,12 @@ describe('run storage (no DOM)', () => {
     expect(recentRuns()).toEqual([]);
   });
 
+  it('records an abandoned run in history but never as a best', () => {
+    const store = recordRun({ ...entry, seed: 'A2', rating: 'NEAR MISS', abandoned: true });
+    expect(store.history[0].abandoned).toBe(true);
+    expect(store.bestByScenario.random).toBeUndefined();
+  });
+
   it('ranks ratings best-to-worst so the best is kept', () => {
     expect(RATING_RANK['NEAR MISS']).toBeGreaterThan(RATING_RANK.CONTAINED);
     expect(RATING_RANK.CONTAINED).toBeGreaterThan(RATING_RANK['REPORTABLE INCIDENT']);

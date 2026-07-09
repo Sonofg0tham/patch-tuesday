@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Hand-authored procedural mark: a clean cyan node cabled to an infected
+       magenta one, the whole game in one glyph. No third-party asset. -->
+  <rect width="32" height="32" rx="6" fill="#0b0e14"/>
+  <line x1="10.5" y1="21.5" x2="21.5" y2="10.5" stroke="#4cc9f0" stroke-width="2"/>
+  <circle cx="10.5" cy="21.5" r="4.5" fill="#0b0e14" stroke="#4cc9f0" stroke-width="2"/>
+  <circle cx="21.5" cy="10.5" r="4.8" fill="#f72585"/>
+</svg>
