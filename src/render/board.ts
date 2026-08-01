@@ -24,6 +24,7 @@ import { NODE_TYPES } from '../data/topology';
 import type { VisibleState } from '../sim/types';
 import {
   buildEdrMarkerGeometry,
+  buildForecastRingGeometry,
   buildNodeGeometries,
   buildOutlineGeometries,
   nodeTopHeight,
@@ -98,6 +99,11 @@ export interface Board {
   setPressure(fraction: number): void;
   /** A business override just force-reconnected this node: flash it. */
   flashOverride(nodeId: string): void;
+  /**
+   * Nodes the worm could reach next turn, from what the player can see. Pass an
+   * empty array to clear. Purely a readability aid; the sim never reads this.
+   */
+  setForecast(nodeIds: readonly string[]): void;
   /** Per-frame presentation: pulse, encryption transitions, flashes. */
   tick(elapsed: number): void;
 }
@@ -226,6 +232,23 @@ export function createBoard(topology: Topology, environment: THREE.Texture | nul
     envMap: environment,
   });
   const sensorRings = new Map<string, THREE.Mesh>();
+
+  // Threat forecast rings: a broken ring at the base of every node the worm
+  // could reach next turn. Magenta, because this is the threat's reach and
+  // magenta belongs to the threat, but broken rather than solid so it can never
+  // be mistaken for a node that is actually compromised. Off unless the player
+  // turns the assist on.
+  const forecastGeometry = buildForecastRingGeometry();
+  const forecastMaterial = new THREE.MeshStandardMaterial({
+    color: palette.infection,
+    emissive: palette.infection,
+    emissiveIntensity: 0.5 * glow,
+    roughness: 0.4,
+    metalness: 0.3,
+    transparent: true,
+    opacity: 0.85,
+  });
+  const forecastRings = new Map<string, THREE.Mesh>();
 
   // Node state: infection (visible) plus transient hover/selection and the
   // in-flight encryption transitions and override flashes.
@@ -461,6 +484,14 @@ export function createBoard(topology: Topology, environment: THREE.Texture | nul
       }
     }
 
+    // Forecast rings turn slowly, the way a targeting reticle does, so they
+    // read as live rather than as scenery. At reduced motion they hold still
+    // and the broken-ring shape carries the cue on its own.
+    if (forecastRings.size > 0 && !motionReduced()) {
+      const spin = elapsed * 0.3;
+      for (const ring of forecastRings.values()) ring.rotation.y = spin;
+    }
+
     // Override flashes: a bright cyan burst on a force-reconnected node.
     for (const [nodeId, start] of [...overrideFlashes]) {
       const p = Math.min(1, (elapsed - start) / 0.6);
@@ -533,6 +564,23 @@ export function createBoard(topology: Topology, environment: THREE.Texture | nul
     flashOverride(nodeId) {
       // The flash clock matches tick's elapsed (performance.now() / 1000).
       overrideFlashes.set(nodeId, performance.now() / 1000);
+    },
+    setForecast(nodeIds) {
+      const wanted = new Set(nodeIds);
+      for (const [nodeId, ring] of [...forecastRings]) {
+        if (wanted.has(nodeId)) continue;
+        group.remove(ring);
+        forecastRings.delete(nodeId);
+      }
+      for (const nodeId of wanted) {
+        if (forecastRings.has(nodeId)) continue;
+        const node = topology.byId.get(nodeId);
+        if (!node) continue;
+        const ring = new THREE.Mesh(forecastGeometry, forecastMaterial);
+        ring.position.set(node.x, 0.05, node.z);
+        forecastRings.set(nodeId, ring);
+        group.add(ring);
+      }
     },
     tick,
   };

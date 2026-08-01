@@ -27,6 +27,13 @@ export interface Settings {
   sfxVolume: number;
   /** Post-processing tier. Applies on the next incident. */
   renderQuality: RenderQuality;
+  /**
+   * Threat forecast assist: ring the nodes the worm could reach next turn.
+   * Off by default. It surfaces nothing the player cannot already see, but it
+   * removes a real perception chore, so whether it belongs on is Craig's call
+   * and the player's, not a default.
+   */
+  threatForecast: boolean;
   /** HUD/menu text scale multiplier, 0.8..1.5. Live. */
   textScale: number;
   /** Stronger UI borders and text for legibility. Live. */
@@ -46,6 +53,7 @@ const DEFAULTS: Settings = {
   musicVolume: 0.6, // the score sits under the effects, never over them
   sfxVolume: 1,
   renderQuality: 'auto',
+  threatForecast: false,
   textScale: 1,
   highContrast: false,
   shakeIntensity: VISUAL_CONFIG.shakeIntensity, // 0, the calm default
@@ -90,6 +98,8 @@ function read(): Settings {
     musicVolume: clamp(saved.musicVolume as number, 0, 1, DEFAULTS.musicVolume),
     sfxVolume: clamp(saved.sfxVolume as number, 0, 1, DEFAULTS.sfxVolume),
     renderQuality: quality,
+    threatForecast:
+      typeof saved.threatForecast === 'boolean' ? saved.threatForecast : DEFAULTS.threatForecast,
     textScale: clamp(saved.textScale as number, 0.8, 1.5, DEFAULTS.textScale),
     highContrast: typeof saved.highContrast === 'boolean' ? saved.highContrast : DEFAULTS.highContrast,
     shakeIntensity: clamp(saved.shakeIntensity as number, 0, 0.4, DEFAULTS.shakeIntensity),
@@ -169,4 +179,15 @@ export function renderQuality(): 'low' | 'medium' | 'high' {
 /** True when the tier is allowed to drop itself under load. */
 export function renderQualityIsAuto(): boolean {
   return loadSettings().renderQuality === 'auto';
+}
+
+export function threatForecastOn(): boolean {
+  return loadSettings().threatForecast;
+}
+
+/** Flips the forecast assist and persists it. Returns the new value. */
+export function toggleThreatForecast(): boolean {
+  const next = { ...loadSettings(), threatForecast: !loadSettings().threatForecast };
+  saveSettings(next);
+  return next.threatForecast;
 }

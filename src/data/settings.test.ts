@@ -77,6 +77,7 @@ function base(): Settings {
     musicVolume: 0.6,
     sfxVolume: 1,
     renderQuality: 'auto',
+    threatForecast: false,
     textScale: 1,
     highContrast: false,
     shakeIntensity: 0,

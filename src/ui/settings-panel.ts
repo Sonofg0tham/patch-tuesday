@@ -199,6 +199,45 @@ export function createSettingsPanel(container: HTMLElement, options: Options): S
       (renderQuality) => ({ renderQuality }),
     );
 
+    // A labelled on/off toggle.
+    const toggle = (
+      label: string,
+      id: string,
+      value: boolean,
+      note: string,
+      read: (checked: boolean) => Partial<Settings>,
+    ): void => {
+      const row = document.createElement('div');
+      row.className = 'settings-row settings-toggle-row';
+      const name = document.createElement('label');
+      name.className = 'settings-label';
+      name.textContent = label;
+      name.htmlFor = id;
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.id = id;
+      box.className = 'settings-checkbox';
+      box.checked = value;
+      box.addEventListener('change', commit);
+      controls.push({ read: () => read(box.checked) });
+      row.append(name, box);
+      panel.append(row);
+      if (note) {
+        const n = document.createElement('div');
+        n.className = 'settings-note';
+        n.textContent = note;
+        panel.append(n);
+      }
+    };
+
+    toggle(
+      'Threat forecast',
+      'set-threat-forecast',
+      s.threatForecast,
+      'Rings the nodes the worm could reach next turn, from what you can see. Blind wherever your EDR is. Toggle in a run with F.',
+      (threatForecast) => ({ threatForecast }),
+    );
+
     // High contrast: a labelled toggle.
     const hcRow = document.createElement('div');
     hcRow.className = 'settings-row settings-toggle-row';

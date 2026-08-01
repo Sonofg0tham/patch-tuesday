@@ -26,6 +26,8 @@ import {
   renderQuality,
   renderQualityIsAuto,
   sfxVolume,
+  threatForecastOn,
+  toggleThreatForecast,
 } from './data/settings';
 import { createScene, resizeIfNeeded, clampPan } from './render/scene';
 import { createBoard } from './render/board';
@@ -45,6 +47,7 @@ import { createPauseMenu } from './ui/pause';
 import { SIM_CONFIG } from './sim/config';
 import { createInitialState, toVisibleView, blastRadius, encryptedCount } from './sim/worm';
 import { applyPlayerAction, endTurn } from './sim/game';
+import { forecastSpread } from './sim/forecast';
 import { RunRecorder, buildPir, type RunRecord } from './sim/pir';
 import type { ActionKind, GameState, PlayerAction, TurnEvent, VisibleState } from './sim/types';
 
@@ -208,10 +211,22 @@ function renderState(): void {
     board.setSensor(node.id, Boolean(state.nodes[node.id].revealed) && !node.edr);
   }
   renderHud();
+  refreshForecast();
   roster.setActive(selectedId);
   refreshInspector();
   if (debug.isVisible()) debug.render(state, topology, lastEvents);
   if (state.status !== 'playing') endGame();
+}
+
+// The threat forecast assist: ring every node the worm could reach next turn,
+// derived from the VISIBLE view so it stays blind wherever the EDR coverage is.
+// Off unless the player asked for it.
+function refreshForecast(): void {
+  if (!threatForecastOn() || state.status !== 'playing') {
+    board.setForecast([]);
+    return;
+  }
+  board.setForecast(forecastSpread(currentView, state, topology).atRisk);
 }
 
 function setInputsEnabled(enabled: boolean): void {
@@ -341,13 +356,22 @@ animator.onComplete(() => {
   if (state.status === 'playing') setInputsEnabled(true);
 });
 
-// Debug overlay: 'd' toggles the true-vs-visible table. Ignored while typing.
+// Board hotkeys: 'd' toggles the true-vs-visible debug table, 'f' toggles the
+// threat forecast assist. Both ignored while typing.
 window.addEventListener('keydown', (event) => {
-  if (event.key !== 'd' || event.metaKey || event.ctrlKey) return;
+  if (event.metaKey || event.ctrlKey) return;
   const active = document.activeElement;
   if (active instanceof HTMLElement && ['INPUT', 'TEXTAREA'].includes(active.tagName)) return;
-  debug.toggle();
-  debug.render(state, topology, lastEvents);
+  if (event.key === 'd') {
+    debug.toggle();
+    debug.render(state, topology, lastEvents);
+    return;
+  }
+  if (event.key === 'f' || event.key === 'F') {
+    const on = toggleThreatForecast();
+    refreshForecast();
+    hud.setNotice(on ? 'Threat forecast on' : 'Threat forecast off');
+  }
 });
 
 hud.setSeed(seed);
@@ -361,6 +385,8 @@ const settingsPanel = createSettingsPanel(mustFind('settings'), {
     audio.setMasterVolume(s.masterVolume);
     audio.setMusicVolume(s.musicVolume);
     audio.setSfxVolume(s.sfxVolume);
+    postfx.setFilmAmount(motionReduced() ? 0 : effectivePulseScale());
+    refreshForecast();
   },
   onClose: () => {},
 });
