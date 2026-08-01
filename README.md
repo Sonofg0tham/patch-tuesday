@@ -23,7 +23,9 @@ Mouse-first, fully keyboard-accessible, no twitch inputs anywhere.
 - **Click** a node to inspect it, **click** an action to spend an action point.
 - **Tab** through the asset register on the right to reach every node by keyboard.
 - Action hotkeys act on the selected node: **S** deploy sensor, **I** isolate, **C** reconnect, **P** patch, **R** restore, **E** emergency budget.
-- **Enter** ends the turn. **Esc** pauses. **d** toggles the debug true-vs-visible overlay.
+- **Enter** ends the turn. **Esc** pauses.
+- **F** toggles the threat forecast, an optional assist that rings every node the worm could reach next turn. It reads only what you can see, so it stays blind wherever your EDR coverage is. Off by default.
+- **d** toggles the debug true-vs-visible overlay.
 
 ## The Post-Incident Review
 
@@ -37,7 +39,7 @@ The whole game is balanced around one set of numbers that took six measured pass
 
 ## Stack
 
-Three.js, TypeScript (strict) and Vite. No game engine and no physics library. There are no asset files: every visual is procedural geometry built in code, and every sound is synthesised through the Web Audio API. The 3D canvas draws only the board; all UI (the HUD, the menus, the review) is a DOM overlay, for crisp text and sane accessibility. It deploys to Vercel as a static build, with no backend, no accounts and no analytics; settings and best runs live in localStorage.
+Three.js, TypeScript (strict) and Vite. No game engine and no physics library. There are no asset files, and that survived the graphics and audio pass: every visual is procedural geometry with PBR material maps painted into a canvas at boot, lit through ACES filmic tone mapping against an environment map built from a small procedural room, and finished with a bloom and film-grade post chain. Every sound is synthesised through the Web Audio API, including the adaptive score, which is six layers gated on how bad the incident is, and the convolution reverb, whose impulse response is generated rather than recorded. The 3D canvas draws only the board; all UI (the HUD, the menus, the review) is a DOM overlay, for crisp text and sane accessibility. It deploys to Vercel as a static build, with no backend, no accounts and no analytics; settings and best runs live in localStorage.
 
 ## Development
 

@@ -23,8 +23,24 @@ licence, CC0 by construction like the rest of the visuals.
 
 ## Everything else
 
-Audit, Phase 6: the only third-party assets in the repo are the two OFL fonts
-above. There are no texture, model, or audio files, and the only image is the
-hand-authored favicon. Everything on the board and in the soundscape is
-generated in code at runtime. If any other asset appears in the repo without an
-entry here, that is a bug.
+Audit, Phase 7: unchanged. The only third-party assets in the repo are the two
+OFL fonts above. There are no texture, model, or audio files, and the only image
+is the hand-authored favicon.
+
+Phase 7 was the test of that rule, because it is the phase that added material
+maps, an environment map, a reverb and a musical score, all of which normally
+arrive as files. None of them did:
+
+- Every surface map (sheet metal, raised-floor concrete, braided cable sheath)
+  is painted into a canvas at boot and differentiated into a normal map in code
+  (`src/render/textures.ts`).
+- The environment map every metal chassis reflects is a small procedural room,
+  built in code and prefiltered through three's `PMREMGenerator`.
+- The convolution reverb's impulse response is synthesised noise under an
+  exponential fade plus computed early reflections, not a recorded space
+  (`src/audio/reverb.ts`).
+- The score is oscillators and scheduled envelopes (`src/audio/music.ts`).
+
+Verified against the production build: `dist/` contains no file that is not
+JavaScript, CSS, HTML, the OFL fonts, or the favicon. If any other asset appears
+in the repo without an entry here, that is a bug.

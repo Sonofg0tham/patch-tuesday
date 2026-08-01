@@ -122,6 +122,18 @@ Shipped: a dramatic lighting rig (dim ambient, cyan uplight, a crown light on th
 **Phase 6, ship.** Runbook-styled main menu, settings (volume, text scale, high contrast, shake), instrument-don't-tune balance worksheet, README with GIFs and the how-it-was-built note, CREDITS.md audit, favicon and title, cold-cache production check.
 Done when: a public URL and a repo that belongs on the CV next to Tailgate.
 
+**Phase 7, the next level.** Not in the original plan; added after v1 shipped, on Craig's call to raise the production values. Three fronts: how the image is formed, the missing music pillar, and the perception chore sitting on top of the tactics.
+
+Rendering: the board was flat `MeshStandardMaterial` with no tone mapping, no reflections and no post-processing, which is why it read as a prototype rather than a game. Now it runs ACES filmic tone mapping, a procedurally prefiltered environment map (`src/render/textures.ts` builds a small room and pushes it through `PMREMGenerator`, so metal finally has something to reflect), PBR maps painted in code from tileable value noise and a Sobel height-to-normal pass, and an `EffectComposer` chain of bloom plus one combined film pass (grade, chromatic aberration, vignette, static scanlines, grain) in `src/render/postfx.ts`. Node state now drives a per-instance emissive attribute rather than only a diffuse colour, so an infected chassis is a real light source that blooms and lights its neighbours; cables carry a travelling pulse that turns magenta and accelerates when the link is compromised. Every silhouette from Phase 1 is unchanged (the accessibility contract depends on them) but each now contains real hardware detail: bevels, vent banks, rack sleds, drive bays, the DC beacon. The zero-asset rule holds exactly: not one texture, model or audio file was added.
+
+Audio: `src/audio/music.ts` adds the score the design always called for, six layers on a four-chord loop in D natural minor that never resolves, each gated by how bad the incident is, so the music is a readout of the board rather than a bed under it. It ends on a verdict: the tritone holds unresolved on a loss, the suspended dominant finally lands on containment. `src/audio/reverb.ts` synthesises its own impulse response, so every sound sits in the same room. Effects are placed in the stereo field from where they happened on the board.
+
+Gameplay: the threat forecast (`src/sim/forecast.ts`), an assist that rings every node the worm could reach next turn. It mirrors the spread rules exactly but reads the visible view, so it is blind wherever the EDR coverage is, which makes it an expression of pillar 2 rather than a workaround for it. **Off by default**: it changes no locked economy value, but it does change how much work the player does to read the board, so switching it on by default is a feel decision and therefore Craig's.
+
+Quality tiers: post-processing is the one thing here that could threaten the 60fps floor, so it ships with three tiers and a working bypass at LOW, auto-selected by watching the real frame rate and steppable by hand in settings. Measured on the full HIGH tier: 0.43ms average frame, 1.8ms worst, against a 16.7ms budget.
+
+Done when: a still of the board is indistinguishable from a shipped indie tactics game, the score is audibly reading the incident, and the frame budget is unmoved.
+
 ## v2 parking lot (do not build in v1)
 
 STALKER and LOUDMOUTH threat variants, insider threat events, campaign or meta-progression across incidents, daily seed challenge, audit mode replay, additional topolgy themes (OT network, cloud VPC), gamepad, mobile, and multiplayer never.
