@@ -17,9 +17,18 @@ import { createScreenShake } from './render/shake';
 import { scenarioById } from './data/scenarios';
 import { randomSeed } from './data/seed';
 import { recordRun } from './data/storage';
-import { applyDomSettings, masterVolume } from './data/settings';
+import {
+  applyDomSettings,
+  effectivePulseScale,
+  masterVolume,
+  motionReduced,
+  renderQuality,
+  renderQualityIsAuto,
+} from './data/settings';
 import { createScene, resizeIfNeeded, clampPan } from './render/scene';
 import { createBoard } from './render/board';
+import { createPostFx } from './render/postfx';
+import { tickMaterials } from './render/materials';
 import { createPointerPicker } from './render/picking';
 import { createSpreadAnimator } from './render/spread-animation';
 import { createOverlay } from './ui/overlay';
@@ -56,8 +65,15 @@ const seed = params.get('seed') ?? randomSeed();
 const topology = scenario.build(seed);
 
 const context = createScene(topology);
-const board = createBoard(topology);
+const board = createBoard(topology, context.environment);
 context.scene.add(board.group);
+
+// The post-processing chain. Bloom plus the film grade, with a working "off"
+// path at the LOW tier for weak hardware. Grain and scanlines are pattern and
+// motion across the whole screen, so the motion level gates them independently
+// of the tier: at "reduced" the image is clean.
+const postfx = createPostFx(context.renderer, context.scene, context.camera, renderQuality());
+postfx.setFilmAmount(motionReduced() ? 0 : effectivePulseScale());
 
 const overlay = createOverlay(topology);
 const hud = createHud();
@@ -156,9 +172,14 @@ function renderHud(): void {
   // rings warm with pressure, the undertone climbs, and the keyboard clatter of
   // the war room thickens as the estate falls.
   const pressureFraction = state.pressure / SIM_CONFIG.pressureMax;
+  const blast = blastRadius(state);
   board.setPressure(pressureFraction);
   audio.setPressure(pressureFraction);
-  audio.setBlastIntensity(blastRadius(state));
+  audio.setBlastIntensity(blast);
+  // The image itself sickens as the estate falls: the grade bleeds magenta into
+  // the shadows, so a board in trouble is legible from the colour of the room
+  // before you have read a single node.
+  postfx.setInfectionLevel(blast);
 }
 
 // Full refresh: board, isolation, HUD, inspector, debug, and the end screen.
@@ -364,29 +385,63 @@ let frames = 0;
 let windowStart = performance.now();
 let lastFrame = performance.now();
 
+// Adaptive quality. At the 'auto' setting the tier starts HIGH and steps down
+// once if the measured frame rate cannot hold the budget. Two consecutive slow
+// half-second windows are needed, so a one-off hitch (a tab regaining focus, a
+// shader compiling) never costs the player their bloom. The first few windows
+// are ignored outright while shaders compile and textures upload.
+const FPS_FLOOR = 50;
+let slowWindows = 0;
+let warmupWindows = 0;
+
+function considerQualityDrop(fps: number): void {
+  if (!renderQualityIsAuto()) return;
+  if (warmupWindows < 6) {
+    warmupWindows += 1;
+    return;
+  }
+  if (fps >= FPS_FLOOR) {
+    slowWindows = 0;
+    return;
+  }
+  slowWindows += 1;
+  if (slowWindows < 2) return;
+  slowWindows = 0;
+  const current = postfx.quality();
+  if (current === 'high') postfx.setQuality('medium');
+  else if (current === 'medium') postfx.setQuality('low');
+}
+
 function tick(): void {
   requestAnimationFrame(tick);
   const now = performance.now();
   const dt = Math.min(0.1, (now - lastFrame) / 1000); // clamp long tab-away gaps
   lastFrame = now;
+  const seconds = now / 1000;
 
-  resizeIfNeeded(context);
+  if (resizeIfNeeded(context)) {
+    postfx.setSize(window.innerWidth, window.innerHeight);
+  }
   context.controls.update();
   clampPan(context, topology);
-  animator.update(now / 1000);
-  board.tick(now / 1000); // pulse, encryption transitions, override flashes
+  animator.update(seconds);
+  board.tick(seconds); // pulse, encryption transitions, override flashes
+  tickMaterials(seconds); // the pulses travelling along the cables
+  context.tickAtmosphere(seconds); // the dust in the light
 
   // Screen shake: apply a transient camera offset for the render, then remove
   // it so the controls never accumulate drift. A no-op at the calm default.
   const offset = shake.step(dt);
   context.camera.position.add(offset);
-  context.renderer.render(context.scene, context.camera);
+  postfx.render(seconds);
   context.camera.position.sub(offset);
 
   frames += 1;
   const elapsed = now - windowStart;
   if (elapsed >= 500) {
-    overlay.setFps((frames * 1000) / elapsed);
+    const fps = (frames * 1000) / elapsed;
+    overlay.setFps(fps);
+    considerQualityDrop(fps);
     frames = 0;
     windowStart = now;
   }
@@ -442,9 +497,11 @@ window.__spikeBench = (benchFrames = 120) => {
     // (pulse, transitions, flashes), the shake sample, and the render. This is
     // the honest frame cost, not just the draw call.
     board.tick(now / 1000);
+    tickMaterials(now / 1000);
+    context.tickAtmosphere(now / 1000);
     const offset = shake.step(0.016);
     context.camera.position.add(offset);
-    context.renderer.render(context.scene, context.camera);
+    postfx.render(now / 1000);
     context.camera.position.sub(offset);
     times.push(performance.now() - now);
   }

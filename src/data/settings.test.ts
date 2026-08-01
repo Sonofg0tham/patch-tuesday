@@ -74,6 +74,9 @@ describe('reduced-motion default for a fresh visitor', () => {
 function base(): Settings {
   return {
     masterVolume: 0.7,
+    musicVolume: 0.6,
+    sfxVolume: 1,
+    renderQuality: 'auto',
     textScale: 1,
     highContrast: false,
     shakeIntensity: 0,

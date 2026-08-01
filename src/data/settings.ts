@@ -10,9 +10,23 @@ import { VISUAL_CONFIG } from '../config/visual';
 
 export type MotionLevel = 'full' | 'calm' | 'reduced';
 
+/**
+ * Render quality. 'auto' starts at HIGH and steps down on its own if the
+ * measured frame cost blows the 60fps budget, which is the honest way to hold
+ * the integrated-graphics target without asking the player to know what a
+ * bloom pass is. The explicit tiers pin it.
+ */
+export type RenderQuality = 'auto' | 'low' | 'medium' | 'high';
+
 export interface Settings {
   /** Audio master volume, 0..1. Live. */
   masterVolume: number;
+  /** Score volume relative to master, 0..1. Live. */
+  musicVolume: number;
+  /** Effects volume relative to master, 0..1. Live. */
+  sfxVolume: number;
+  /** Post-processing tier. Applies on the next incident. */
+  renderQuality: RenderQuality;
   /** HUD/menu text scale multiplier, 0.8..1.5. Live. */
   textScale: number;
   /** Stronger UI borders and text for legibility. Live. */
@@ -29,6 +43,9 @@ const KEY = 'patch-tuesday:settings:v1';
 
 const DEFAULTS: Settings = {
   masterVolume: 0.7,
+  musicVolume: 0.6, // the score sits under the effects, never over them
+  sfxVolume: 1,
+  renderQuality: 'auto',
   textScale: 1,
   highContrast: false,
   shakeIntensity: VISUAL_CONFIG.shakeIntensity, // 0, the calm default
@@ -61,8 +78,18 @@ function read(): Settings {
         osPrefersReducedMotion()
         ? 'reduced'
         : DEFAULTS.motionLevel;
+  const quality: RenderQuality =
+    saved.renderQuality === 'auto' ||
+    saved.renderQuality === 'low' ||
+    saved.renderQuality === 'medium' ||
+    saved.renderQuality === 'high'
+      ? saved.renderQuality
+      : DEFAULTS.renderQuality;
   return {
     masterVolume: clamp(saved.masterVolume as number, 0, 1, DEFAULTS.masterVolume),
+    musicVolume: clamp(saved.musicVolume as number, 0, 1, DEFAULTS.musicVolume),
+    sfxVolume: clamp(saved.sfxVolume as number, 0, 1, DEFAULTS.sfxVolume),
+    renderQuality: quality,
     textScale: clamp(saved.textScale as number, 0.8, 1.5, DEFAULTS.textScale),
     highContrast: typeof saved.highContrast === 'boolean' ? saved.highContrast : DEFAULTS.highContrast,
     shakeIntensity: clamp(saved.shakeIntensity as number, 0, 0.4, DEFAULTS.shakeIntensity),
@@ -119,4 +146,27 @@ export function effectiveVisibilityFloor(): number {
 
 export function masterVolume(): number {
   return loadSettings().masterVolume;
+}
+
+export function musicVolume(): number {
+  return loadSettings().musicVolume;
+}
+
+export function sfxVolume(): number {
+  return loadSettings().sfxVolume;
+}
+
+/**
+ * The tier the renderer should boot at. 'auto' optimistically starts HIGH; the
+ * main loop watches the real frame cost and steps down if the budget is blown,
+ * so a weak machine settles itself within the first couple of seconds.
+ */
+export function renderQuality(): 'low' | 'medium' | 'high' {
+  const setting = loadSettings().renderQuality;
+  return setting === 'auto' ? 'high' : setting;
+}
+
+/** True when the tier is allowed to drop itself under load. */
+export function renderQualityIsAuto(): boolean {
+  return loadSettings().renderQuality === 'auto';
 }

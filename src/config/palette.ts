@@ -11,7 +11,7 @@ export const palette = {
   text: '#c5cdd8', // cool grey UI text
 
   // Derived tones for the board.
-  nodeBase: '#2f8fb3', // resting node, muted so hover and selection pop
+  nodeBase: '#4a6d80', // resting node: steel with a cyan cast, so hover, selection and infection all have headroom above it
   nodeHover: '#4cc9f0', // hover matches the accent
   nodeSelected: '#c8f0fc', // selected, near-white cyan
   ground: '#11161f', // board floor, a step up from the background
