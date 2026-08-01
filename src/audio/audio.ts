@@ -1,12 +1,22 @@
-// The war-room soundscape (Phase 5), all synthesised via WebAudio. One module,
-// sounds keyed by name, the pattern proven in Tailgate. Nothing is fetched: every
-// sound is generated from oscillators and noise, so the whole thing is CC0 by
-// construction. registerSample() is the file-swap escape hatch: drop an
-// AudioBuffer under a name and it plays instead of the synth.
+// The war-room soundscape (Phase 5, rebuilt in Phase 7), all synthesised via
+// WebAudio. One module, sounds keyed by name, the pattern proven in Tailgate.
+// Nothing is fetched: every sound is generated from oscillators and noise, so
+// the whole thing is CC0 by construction. registerSample() is the file-swap
+// escape hatch: drop an AudioBuffer under a name and it plays instead of the
+// synth.
+//
+// Phase 7 gave it a mixer instead of a single gain node. There are now three
+// buses under the master: effects, ambience and the score, each with its own
+// level, all feeding a shared convolution reverb so they sound like they are
+// happening in the same room. Effects are positioned in the stereo field from
+// where they happened on the board, and the score ducks under the big ones.
 //
 // Autoplay policy: the AudioContext is not created until unlock() is called from
 // a real user gesture, so nothing tries to make noise (or logs a warning) before
 // the player has interacted. play() before unlock is a silent no-op.
+
+import { createMusic, type Music, type Outcome } from './music';
+import { createReverbBus, type ReverbBus } from './reverb';
 
 export type SoundName =
   | 'confirm' // a clean action landed
@@ -29,67 +39,159 @@ export const SOUND_NAMES: SoundName[] = [
   'override',
 ];
 
+/** Optional placement for a sound: -1 hard left, 0 centre, 1 hard right. */
+export interface PlayOptions {
+  pan?: number;
+}
+
 export interface Audio {
   /** Create/resume the context on a real user gesture. Idempotent. */
   unlock(): void;
-  play(name: SoundName): void;
-  /** Master volume 0..1. The Phase 6 settings slider will drive this. */
+  play(name: SoundName, options?: PlayOptions): void;
+  /** Master volume 0..1, over everything. */
   setMasterVolume(v: number): void;
+  /** Score volume relative to the master, 0..1. */
+  setMusicVolume(v: number): void;
+  /** Effects and ambience volume relative to the master, 0..1. */
+  setSfxVolume(v: number): void;
   /** Blast radius 0..1: the keyboard clatter of the war room intensifies. */
   setBlastIntensity(fraction: number): void;
   /** Business pressure 0..1: an escalating low undertone. */
   setPressure(fraction: number): void;
+  /** The run ended: the score plays its verdict and stops adapting. */
+  resolve(outcome: Outcome): void;
   /** File-swap escape hatch: play this buffer for the name instead of the synth. */
   registerSample(name: SoundName, buffer: AudioBuffer): void;
 }
 
+// How hard each sound ducks the score, and for how long. The signature stings
+// get the room to themselves; a confirm blip does not.
+const DUCK: Partial<Record<SoundName, [depth: number, seconds: number]>> = {
+  encrypt: [0.4, 0.25],
+  'encrypt-heavy': [0.62, 0.5],
+  override: [0.5, 0.3],
+  defeat: [0.85, 1.6],
+  contain: [0.5, 1.0],
+};
+
 export function createAudio(): Audio {
   let ctx: AudioContext | null = null;
   let master: GainNode | null = null;
-  let masterVolume = 0.7;
+  let sfxBus: GainNode | null = null;
+  let reverb: ReverbBus | null = null;
+  let music: Music | null = null;
   let ambience: Ambience | null = null;
+  let masterLevel = 0.7;
+  let musicLevel = 0.6;
+  let sfxLevel = 1;
   const samples = new Map<SoundName, AudioBuffer>();
+
+  // The two board pressures the score listens to. Blast radius dominates
+  // (losing the estate is the real emergency); business pressure adds on top,
+  // because a board that is contained but screaming at you is still tense.
+  let blastLevel = 0;
+  let pressureLevel = 0;
+  function pushIntensity(): void {
+    music?.setIntensity(Math.min(1, blastLevel * 1.35 + pressureLevel * 0.35));
+  }
 
   function unlock(): void {
     if (ctx) {
       if (ctx.state === 'suspended') void ctx.resume();
       return;
     }
-    const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    const Ctor =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctor) return;
     ctx = new Ctor();
+
     master = ctx.createGain();
-    master.gain.value = masterVolume;
+    master.gain.value = masterLevel;
     master.connect(ctx.destination);
-    ambience = createAmbience(ctx, master);
+
+    // The room everything shares. Built before the buses so both can send.
+    reverb = createReverbBus(ctx, master);
+
+    sfxBus = ctx.createGain();
+    sfxBus.gain.value = sfxLevel;
+    sfxBus.connect(master);
+    // A modest permanent send, so every effect has some room on it without
+    // each synth having to think about reverb.
+    const sfxSend = ctx.createGain();
+    sfxSend.gain.value = 0.3;
+    sfxBus.connect(sfxSend).connect(reverb.input);
+
+    const musicBus = ctx.createGain();
+    musicBus.gain.value = 1;
+    musicBus.connect(master);
+
+    music = createMusic(ctx, musicBus, reverb.input);
+    music.setVolume(musicLevel);
+    music.start();
+
+    ambience = createAmbience(ctx, sfxBus, reverb.input);
     ambience.start();
   }
 
-  function play(name: SoundName): void {
-    if (!ctx || !master) return;
+  function play(name: SoundName, options?: PlayOptions): void {
+    if (!ctx || !sfxBus) return;
+
+    // Position the sound where it happened on the board. Panning the spread
+    // ticks is the point of this: during resolution you can hear which side of
+    // the estate the worm is working on before you have found it on screen.
+    let destination: AudioNode = sfxBus;
+    if (options?.pan !== undefined && ctx.createStereoPanner) {
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = Math.max(-1, Math.min(1, options.pan));
+      panner.connect(sfxBus);
+      destination = panner;
+    }
+
+    const duck = DUCK[name];
+    if (duck) music?.duck(duck[0], duck[1]);
+
     const sample = samples.get(name);
     if (sample) {
       const src = ctx.createBufferSource();
       src.buffer = sample;
-      src.connect(master);
+      src.connect(destination);
       src.start();
       return;
     }
-    SYNTHS[name](ctx, master);
+    SYNTHS[name](ctx, destination);
   }
 
   return {
     unlock,
     play,
     setMasterVolume(v) {
-      masterVolume = Math.max(0, Math.min(1, v));
-      if (master && ctx) master.gain.setTargetAtTime(masterVolume, ctx.currentTime, 0.02);
+      masterLevel = Math.max(0, Math.min(1, v));
+      if (master && ctx) master.gain.setTargetAtTime(masterLevel, ctx.currentTime, 0.02);
+    },
+    setMusicVolume(v) {
+      musicLevel = Math.max(0, Math.min(1, v));
+      music?.setVolume(musicLevel);
+    },
+    setSfxVolume(v) {
+      sfxLevel = Math.max(0, Math.min(1, v));
+      if (sfxBus && ctx) sfxBus.gain.setTargetAtTime(sfxLevel, ctx.currentTime, 0.02);
     },
     setBlastIntensity(fraction) {
-      ambience?.setBlast(Math.max(0, Math.min(1, fraction)));
+      // The score reads the board: the blast radius is most of what decides
+      // which layers are playing.
+      blastLevel = Math.max(0, Math.min(1, fraction));
+      ambience?.setBlast(blastLevel);
+      pushIntensity();
     },
     setPressure(fraction) {
-      ambience?.setPressure(Math.max(0, Math.min(1, fraction)));
+      pressureLevel = Math.max(0, Math.min(1, fraction));
+      ambience?.setPressure(pressureLevel);
+      pushIntensity();
+    },
+    resolve(outcome) {
+      music?.resolve(outcome);
+      ambience?.setBlast(0);
     },
     registerSample(name, buffer) {
       samples.set(name, buffer);
@@ -122,7 +224,8 @@ function tone(
   osc.type = type;
   const t = ctx.currentTime;
   osc.frequency.setValueAtTime(freq, t);
-  if (glideTo !== undefined) osc.frequency.exponentialRampToValueAtTime(Math.max(1, glideTo), t + attack + decay);
+  if (glideTo !== undefined)
+    osc.frequency.exponentialRampToValueAtTime(Math.max(1, glideTo), t + attack + decay);
   const g = envGain(ctx, peak, attack, decay);
   osc.connect(g).connect(out);
   osc.start(t);
@@ -194,6 +297,9 @@ function encryptSting(ctx: AudioContext, out: AudioNode, heavy: boolean): void {
     osc.start(t);
     osc.stop(t + dur + 0.05);
   }
+  // A sub thump underneath, so the sting has weight as well as bite. This is
+  // what makes losing a node feel like something landing rather than a beep.
+  tone(ctx, out, 'sine', heavy ? 52 : 78, heavy ? 0.45 : 0.28, 0.004, heavy ? 0.4 : 0.22, heavy ? 30 : 46);
   // A spit of bright noise on the attack.
   noiseBurst(ctx, out, heavy ? 0.18 : 0.12, heavy ? 0.22 : 0.16, 'highpass', 1800);
 }
@@ -261,7 +367,7 @@ interface Ambience {
   setPressure(fraction: number): void;
 }
 
-function createAmbience(ctx: AudioContext, out: AudioNode): Ambience {
+function createAmbience(ctx: AudioContext, out: AudioNode, reverbSend: AudioNode): Ambience {
   const bed = ctx.createGain();
   bed.gain.value = 0.5;
   bed.connect(out);
@@ -302,7 +408,9 @@ function createAmbience(ctx: AudioContext, out: AudioNode): Ambience {
   pressureOsc.connect(pressureFilter).connect(pressureGain).connect(bed);
 
   // Keyboard clatter: short bright noise ticks, scheduled at a rate set by the
-  // blast radius, so the room gets busier as the estate falls.
+  // blast radius, so the room gets busier as the estate falls. Each one lands
+  // somewhere random in the stereo field: it is a room full of people, not one
+  // person sitting in the middle of your head.
   let blast = 0;
   function scheduleClatter(): void {
     // Runs for the page lifetime; the ambience is never torn down.
@@ -317,7 +425,16 @@ function createAmbience(ctx: AudioContext, out: AudioNode): Ambience {
       filter.frequency.value = 1800 + Math.random() * 1600;
       const g = ctx.createGain();
       g.gain.value = 0.03 + blast * 0.05;
-      src.connect(filter).connect(g).connect(bed);
+      let tail: AudioNode = g;
+      if (ctx.createStereoPanner) {
+        const panner = ctx.createStereoPanner();
+        panner.pan.value = Math.random() * 1.6 - 0.8;
+        g.connect(panner);
+        tail = panner;
+      }
+      src.connect(filter).connect(g);
+      tail.connect(bed);
+      tail.connect(reverbSend);
       src.start();
       src.stop(ctx.currentTime + 0.04);
     }, 140);

@@ -26,9 +26,15 @@ describe('audio module', () => {
     const audio = createAudio();
     expect(() => {
       for (const name of SOUND_NAMES) audio.play(name);
+      // Positioned effects take the same path; a pan before unlock must also
+      // be a no-op rather than reaching for a context that does not exist.
+      audio.play('spread', { pan: -0.8 });
       audio.setMasterVolume(0.5);
+      audio.setMusicVolume(0.4);
+      audio.setSfxVolume(0.9);
       audio.setBlastIntensity(0.7);
       audio.setPressure(0.3);
+      audio.resolve('lost');
     }).not.toThrow();
   });
 });

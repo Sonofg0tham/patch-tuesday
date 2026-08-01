@@ -22,8 +22,10 @@ import {
   effectivePulseScale,
   masterVolume,
   motionReduced,
+  musicVolume,
   renderQuality,
   renderQualityIsAuto,
+  sfxVolume,
 } from './data/settings';
 import { createScene, resizeIfNeeded, clampPan } from './render/scene';
 import { createBoard } from './render/board';
@@ -89,6 +91,8 @@ const shake = createScreenShake();
 function unlockAudio(): void {
   audio.unlock();
   audio.setMasterVolume(masterVolume());
+  audio.setMusicVolume(musicVolume());
+  audio.setSfxVolume(sfxVolume());
   window.removeEventListener('pointerdown', unlockAudio);
   window.removeEventListener('keydown', unlockAudio);
 }
@@ -98,10 +102,21 @@ window.addEventListener('keydown', unlockAudio);
 // The threat is audible as it moves: a tense tick as each creep lands, the
 // signature sting as a node encrypts (heavier for the crown jewels), and a
 // small camera knock on the lock.
-animator.onReveal(() => audio.play('spread'));
+// A node's x position across the estate becomes its place in the stereo field,
+// so during resolution you can hear which side of the board the worm is working
+// on before you have found it on screen.
+function panFor(nodeId: string): number {
+  const node = topology.byId.get(nodeId);
+  if (!node || topology.halfWidth <= 0) return 0;
+  return Math.max(-1, Math.min(1, node.x / topology.halfWidth)) * 0.75;
+}
+
+animator.onReveal((nodeId) => audio.play('spread', { pan: panFor(nodeId) }));
 animator.onLock((nodeId) => {
   const type = topology.byId.get(nodeId)?.type;
-  audio.play(type === 'domain-controller' || type === 'backup' ? 'encrypt-heavy' : 'encrypt');
+  audio.play(type === 'domain-controller' || type === 'backup' ? 'encrypt-heavy' : 'encrypt', {
+    pan: panFor(nodeId),
+  });
   shake.add(0.25);
 });
 
@@ -239,6 +254,9 @@ function endGame(abandoned = false): void {
   } else {
     audio.play('contain');
   }
+  // The score stops adapting and plays its verdict: the tritone holds and never
+  // resolves on a loss, the suspended dominant finally lands on containment.
+  audio.resolve(abandoned ? 'abandoned' : state.status === 'lost' ? 'lost' : 'won');
   audio.setBlastIntensity(0); // the incident is over; quiet the clatter
   pirScreen.show(pir, scenario.id, seed);
 }
@@ -310,7 +328,7 @@ hud.onEndTurn(() => {
   // reconnected node flashes, a phone-slam sound, and a jolt.
   for (const e of overrides) {
     board.flashOverride(e.node);
-    audio.play('override');
+    audio.play('override', { pan: panFor(e.node) });
     shake.add(0.6);
   }
   renderHud();
@@ -339,7 +357,11 @@ renderState();
 // Settings panel, shared by the runbook menu and the pause menu. Master volume
 // applies live; the DOM-level settings are applied by saveSettings itself.
 const settingsPanel = createSettingsPanel(mustFind('settings'), {
-  onChange: (s) => audio.setMasterVolume(s.masterVolume),
+  onChange: (s) => {
+    audio.setMasterVolume(s.masterVolume);
+    audio.setMusicVolume(s.musicVolume);
+    audio.setSfxVolume(s.sfxVolume);
+  },
   onClose: () => {},
 });
 

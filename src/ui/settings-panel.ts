@@ -4,7 +4,13 @@
 // live where it can; the visibility floor is baked into the 3D scene at boot, so
 // it is labelled as taking effect on the next incident.
 
-import { loadSettings, saveSettings, type MotionLevel, type Settings } from '../data/settings';
+import {
+  loadSettings,
+  saveSettings,
+  type MotionLevel,
+  type RenderQuality,
+  type Settings,
+} from '../data/settings';
 
 export interface SettingsPanel {
   open(): void;
@@ -23,6 +29,13 @@ const MOTION_LABELS: Record<MotionLevel, string> = {
   full: 'Full',
   calm: 'Calm',
   reduced: 'Reduced',
+};
+
+const QUALITY_LABELS: Record<RenderQuality, string> = {
+  auto: 'Auto',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
 };
 
 export function createSettingsPanel(container: HTMLElement, options: Options): SettingsPanel {
@@ -98,8 +111,60 @@ export function createSettingsPanel(container: HTMLElement, options: Options): S
       panel.append(row);
     };
 
+    // A segmented radio group. Shared by motion level and render quality.
+    const segment = <T extends string>(
+      label: string,
+      values: readonly T[],
+      labels: Record<T, string>,
+      current: T,
+      note: string,
+      read: (value: T) => Partial<Settings>,
+    ): void => {
+      const row = document.createElement('div');
+      row.className = 'settings-row';
+      const name = document.createElement('div');
+      name.className = 'settings-label';
+      name.textContent = label;
+      const seg = document.createElement('div');
+      seg.className = 'settings-segment';
+      seg.setAttribute('role', 'radiogroup');
+      seg.setAttribute('aria-label', label);
+      let selected: T = current;
+      const buttons = new Map<T, HTMLButtonElement>();
+      for (const value of values) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'settings-seg-button';
+        button.textContent = labels[value];
+        button.setAttribute('role', 'radio');
+        button.setAttribute('aria-checked', String(value === selected));
+        button.addEventListener('click', () => {
+          selected = value;
+          for (const [v, b] of buttons) b.setAttribute('aria-checked', String(v === value));
+          commit();
+        });
+        buttons.set(value, button);
+        seg.append(button);
+      }
+      controls.push({ read: () => read(selected) });
+      row.append(name, seg);
+      if (note) {
+        const n = document.createElement('div');
+        n.className = 'settings-note';
+        n.textContent = note;
+        row.append(n);
+      }
+      panel.append(row);
+    };
+
     slider('Master volume', Math.round(s.masterVolume * 100), 0, 100, '', (raw) => ({
       masterVolume: raw / 100,
+    }));
+    slider('Score volume', Math.round(s.musicVolume * 100), 0, 100, '', (raw) => ({
+      musicVolume: raw / 100,
+    }));
+    slider('Effects volume', Math.round(s.sfxVolume * 100), 0, 100, '', (raw) => ({
+      sfxVolume: raw / 100,
     }));
     slider('HUD text scale', Math.round(s.textScale * 100), 80, 150, '', (raw) => ({
       textScale: raw / 100,
@@ -116,40 +181,23 @@ export function createSettingsPanel(container: HTMLElement, options: Options): S
       (raw) => ({ visibilityFloor: raw / 100 }),
     );
 
-    // Motion level: a segmented set of radio buttons.
-    const motionRow = document.createElement('div');
-    motionRow.className = 'settings-row';
-    const motionLabel = document.createElement('div');
-    motionLabel.className = 'settings-label';
-    motionLabel.textContent = 'Motion level';
-    const seg = document.createElement('div');
-    seg.className = 'settings-segment';
-    seg.setAttribute('role', 'radiogroup');
-    seg.setAttribute('aria-label', 'Motion level');
-    let motionValue: MotionLevel = s.motionLevel;
-    const segButtons = new Map<MotionLevel, HTMLButtonElement>();
-    for (const level of ['full', 'calm', 'reduced'] as MotionLevel[]) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'settings-seg-button';
-      b.textContent = MOTION_LABELS[level];
-      b.setAttribute('role', 'radio');
-      b.setAttribute('aria-checked', String(level === motionValue));
-      b.addEventListener('click', () => {
-        motionValue = level;
-        for (const [lv, btn] of segButtons) btn.setAttribute('aria-checked', String(lv === level));
-        commit();
-      });
-      segButtons.set(level, b);
-      seg.append(b);
-    }
-    controls.push({ read: () => ({ motionLevel: motionValue }) });
-    motionRow.append(motionLabel, seg);
-    const motionNote = document.createElement('div');
-    motionNote.className = 'settings-note';
-    motionNote.textContent = 'Reduced turns off shake and eases the pulse. State cues stay.';
-    motionRow.append(motionNote);
-    panel.append(motionRow);
+    segment(
+      'Motion level',
+      ['full', 'calm', 'reduced'] as const,
+      MOTION_LABELS,
+      s.motionLevel,
+      'Reduced turns off shake, grain and drifting dust, and eases the pulse. State cues stay.',
+      (motionLevel) => ({ motionLevel }),
+    );
+
+    segment(
+      'Render quality',
+      ['auto', 'low', 'medium', 'high'] as const,
+      QUALITY_LABELS,
+      s.renderQuality,
+      'Bloom and the film grade. Auto starts high and steps down if frames drop. Applies on the next incident.',
+      (renderQuality) => ({ renderQuality }),
+    );
 
     // High contrast: a labelled toggle.
     const hcRow = document.createElement('div');

@@ -100,7 +100,10 @@ const FilmShader = {
       float luma = dot(colour, vec3(0.2126, 0.7152, 0.0722));
       float shadowMask = 1.0 - smoothstep(0.0, 0.45, luma);
       colour += vec3(0.012, 0.020, 0.036) * shadowMask;                     // cool shadows
-      colour += vec3(0.075, 0.0, 0.045) * shadowMask * uInfection;          // the sickness
+      // The sickness. Deliberately restrained: magenta is reserved for the
+      // threat, and if the whole frame washes magenta the nodes that actually
+      // are compromised stop being the loudest thing on screen.
+      colour += vec3(0.042, 0.0, 0.024) * shadowMask * uInfection;
       // A touch of saturation so the cyan reads as a colour, not a grey-blue.
       colour = mix(vec3(luma), colour, 1.12);
 
