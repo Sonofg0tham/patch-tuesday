@@ -2,9 +2,23 @@ import { describe, it, expect } from 'vitest';
 import { loadTopology } from '../data/topology';
 import { SIM_CONFIG } from './config';
 import { makeGameState, makeTopology } from './fixtures';
-import { applyPlayerAction, endTurn, replay } from './game';
+import {
+  applyPlayerAction,
+  declareContainment,
+  endTurn,
+  fileReview,
+  replay,
+} from './game';
 import type { Move } from './types';
 import { stepTurn, visibleStateOf } from './worm';
+
+const noSpreadConfig = { ...SIM_CONFIG, spreadChance: 0, dwellTurns: 0 };
+
+function makeCleanGameState(topology: ReturnType<typeof makeTopology>) {
+  return makeGameState(
+    Object.fromEntries(topology.nodes.map((node) => [node.id, { state: 'clean' as const, infectedTurns: 0 }])),
+  );
+}
 
 describe('actions: legality and effects', () => {
   const topology = makeTopology(
@@ -69,14 +83,17 @@ describe('actions: legality and effects', () => {
     }
   });
 
-  it('the failed patch probe reveals a hidden infection and costs 1 AP', () => {
+  it('a patch probe is accepted, recorded and costs 1 AP', () => {
     const state = makeGameState({ A: { state: 'infected', infectedTurns: 1 }, B: { state: 'clean', infectedTurns: 0 }, BK: { state: 'clean', infectedTurns: 0 } });
     const r = applyPlayerAction(state, { kind: 'patch', node: 'A' }, topology);
-    expect(r.ok).toBe(false);
+    expect(r.ok).toBe(true);
     expect(r.reason).toMatch(/infected/);
     expect(r.state.nodes.A.revealed).toBe(true); // fog pierced
     expect(r.state.ap).toBe(SIM_CONFIG.apPerTurn - 1); // probe cost, not 2
     expect(r.state.nodes.A.state).toBe('infected'); // not patched
+    expect(r.events).toEqual([
+      { kind: 'action', action: 'patch', node: 'A', outcome: 'probe', apSpent: 1, reason: expect.any(String) },
+    ]);
   });
 
   it('isolation blocks spread across the cut cable', () => {
@@ -143,7 +160,7 @@ describe('actions: emergency budget and AP limits', () => {
 });
 
 describe('turn resolution: score and win/lose', () => {
-  it('wins when no infected nodes remain (worm contained below the loss line)', () => {
+  it('does not automatically win when no infected nodes remain', () => {
     // Three-node estate: one isolated infected node burns out to encrypted
     // (33% blast, under the 60% loss line), leaving no infected. Contained.
     const topology = makeTopology([{ id: 'A' }, { id: 'B' }, { id: 'C' }], []);
@@ -153,7 +170,7 @@ describe('turn resolution: score and win/lose', () => {
       C: { state: 'clean', infectedTurns: 0 },
     });
     state = endTurn(state, topology).nextState; // A -> encrypted, no infected left
-    expect(state.status).toBe('won');
+    expect(state.status).toBe('playing');
   });
 
   it('loses when the domain controller is encrypted', () => {
@@ -281,6 +298,149 @@ describe('business pressure', () => {
   });
 });
 
+describe('containment and recovery lifecycle', () => {
+  const topology = makeTopology(
+    [
+      { id: 'VISIBLE', edr: true },
+      { id: 'HIDDEN', edr: false },
+      { id: 'RTR', type: 'router' },
+      { id: 'BK', type: 'backup' },
+    ],
+    [['VISIBLE', 'HIDDEN']],
+  );
+
+  it('a visible infection blocks declaration without spending AP', () => {
+    const state = makeCleanGameState(topology);
+    state.nodes.VISIBLE = { state: 'infected', infectedTurns: 0 };
+    state.ap = 1;
+
+    const result = declareContainment(state, topology, noSpreadConfig);
+
+    expect(result.nextState).toBe(state);
+    expect(result.events).toEqual([]);
+    expect(result.nextState.ap).toBe(1);
+  });
+
+  it('a hidden foothold makes a containment declaration fail without localisation', () => {
+    const state = makeCleanGameState(topology);
+    state.nodes.HIDDEN = { state: 'infected', infectedTurns: 0 };
+    state.ap = 1;
+
+    const result = declareContainment(state, topology, noSpreadConfig);
+
+    expect(result.nextState.phase).toBe('active');
+    expect(result.nextState.ap).toBe(noSpreadConfig.apPerTurn);
+    expect(result.nextState.turn).toBe(state.turn + 1);
+    expect(result.events[0]).toEqual({ kind: 'containment-declaration', confirmed: false });
+    expect(result.events[0]).not.toHaveProperty('node');
+    expect(result.nextState.findings).toContainEqual({
+      turn: state.turn,
+      kind: 'premature-declaration',
+    });
+  });
+
+  it('a clean true estate enters recovery without resolving another hour', () => {
+    const state = makeCleanGameState(topology);
+    state.ap = 1;
+
+    const result = declareContainment(state, topology);
+
+    expect(result.nextState).toMatchObject({ phase: 'recovery', status: 'playing', ap: 2 });
+    expect(result.nextState.turn).toBe(state.turn);
+    expect(result.events).toEqual([{ kind: 'containment-declaration', confirmed: true }]);
+  });
+
+  it('rejects active-only commands in recovery without spending AP', () => {
+    const state = makeCleanGameState(topology);
+    state.phase = 'recovery';
+    state.ap = 2;
+
+    for (const action of [
+      { kind: 'scan' as const, node: 'VISIBLE' },
+      { kind: 'isolate' as const, node: 'VISIBLE' },
+      { kind: 'patch' as const, node: 'VISIBLE' },
+      { kind: 'emergency' as const },
+    ]) {
+      const result = applyPlayerAction(state, action, topology);
+      expect(result.ok).toBe(false);
+      expect(result.state).toBe(state);
+      expect(result.events[0]).toMatchObject({ kind: 'action', outcome: 'blocked', apSpent: 0 });
+    }
+  });
+
+  it('allows only reconnect and restore in recovery', () => {
+    const reconnectable = makeCleanGameState(topology);
+    reconnectable.phase = 'recovery';
+    reconnectable.nodes.RTR.isolated = true;
+    const reconnected = applyPlayerAction(reconnectable, { kind: 'reconnect', node: 'RTR' }, topology);
+    expect(reconnected.ok).toBe(true);
+
+    const restorable = makeCleanGameState(topology);
+    restorable.phase = 'recovery';
+    restorable.nodes.VISIBLE = { state: 'infected', infectedTurns: 0 };
+    const restored = applyPlayerAction(restorable, { kind: 'restore', node: 'VISIBLE' }, topology);
+    expect(restored.ok).toBe(true);
+  });
+
+  it('a recovery hour has no threat events but still accrues business accounting', () => {
+    const state = makeCleanGameState(topology);
+    state.phase = 'recovery';
+    state.nodes.RTR = { state: 'clean', infectedTurns: 0, isolated: true, isolationAge: 0 };
+    state.pressure = 70;
+    const beforeScore = state.score;
+
+    const result = endTurn(state, topology, noSpreadConfig);
+
+    expect(result.events[0]).toEqual({ kind: 'recovery-hour' });
+    expect(result.events.some((event) => event.kind === 'spread-attempt' || event.kind === 'encrypted')).toBe(false);
+    expect(result.nextState.nodes.RTR.isolationAge).toBe(1);
+    expect(result.nextState.pressure).toBeGreaterThan(0);
+    expect(result.nextState.score).toBeGreaterThan(beforeScore);
+  });
+
+  it('a successful declaration does not accrue pressure or impact', () => {
+    const state = makeCleanGameState(topology);
+    state.nodes.RTR = { state: 'clean', infectedTurns: 0, isolated: true, isolationAge: 4 };
+    state.pressure = 30;
+    state.score = 10;
+
+    const result = declareContainment(state, topology);
+
+    expect(result.nextState.pressure).toBe(30);
+    expect(result.nextState.score).toBe(10);
+    expect(result.nextState.nodes.RTR.isolationAge).toBe(4);
+  });
+
+  it('loss takes precedence during recovery accounting', () => {
+    const state = makeCleanGameState(topology);
+    state.phase = 'recovery';
+    state.nodes.BK = { state: 'encrypted', infectedTurns: 3 };
+    state.nodes.VISIBLE = { state: 'encrypted', infectedTurns: 3 };
+    state.nodes.HIDDEN = { state: 'encrypted', infectedTurns: 3 };
+
+    expect(endTurn(state, topology).nextState.status).toBe('lost');
+  });
+
+  it('filing the review is the only successful terminal transition', () => {
+    const state = makeCleanGameState(topology);
+    state.phase = 'recovery';
+
+    expect(fileReview(state).nextState.status).toBe('won');
+    expect(fileReview(makeCleanGameState(topology)).nextState.status).toBe('playing');
+  });
+
+  it('a redundant sensor spends nothing', () => {
+    const state = makeCleanGameState(topology);
+    state.nodes.VISIBLE.revealed = true;
+
+    const result = applyPlayerAction(state, { kind: 'scan', node: 'VISIBLE' }, topology);
+
+    expect(result.ok).toBe(false);
+    expect(result.state.ap).toBe(state.ap);
+    expect(result.events[0]).toMatchObject({ kind: 'action', outcome: 'blocked', apSpent: 0 });
+  });
+});
+
 describe('replay determinism (seed + moves)', () => {
   const topology = loadTopology();
   const moves: Move[] = [
@@ -309,10 +469,27 @@ describe('replay determinism (seed + moves)', () => {
     expect(a).not.toEqual(b);
   });
 
+  it('replays declaration, recovery and filing byte-for-byte', () => {
+    const recoveryTopology = makeTopology([{ id: 'A' }, { id: 'BK', type: 'backup' }], []);
+    const recoveryMoves: Move[] = [
+      { kind: 'restore', node: 'A' },
+      { kind: 'declare-containment' },
+      { kind: 'end-turn' },
+      { kind: 'file-review' },
+    ];
+    const a = replay(recoveryTopology, 'RECOVERY', recoveryMoves, noSpreadConfig);
+    const b = replay(recoveryTopology, 'RECOVERY', recoveryMoves, noSpreadConfig);
+
+    expect(a).toEqual(b);
+    expect(a.status).toBe('won');
+  });
+
   it('the incident cannot be acted on after it ends', () => {
-    // Undefended run to a terminal state, then an action must be refused.
-    const state = replay(topology, 'S51', Array.from({ length: 25 }, () => ({ kind: 'end-turn' as const })));
-    expect(state.status).not.toBe('playing');
+    const finished = makeGameState(
+      Object.fromEntries(topology.nodes.map((node) => [node.id, { state: 'clean' as const, infectedTurns: 0 }])),
+      { phase: 'recovery' },
+    );
+    const state = fileReview(finished).nextState;
     const r = applyPlayerAction(state, { kind: 'scan', node: 'DC-01' }, topology);
     expect(r.ok).toBe(false);
     expect(r.reason).toMatch(/incident is over/);

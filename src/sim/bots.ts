@@ -8,7 +8,7 @@
 import type { Topology, TopologyNode } from '../data/topology';
 import { SIM_CONFIG, type SimConfig } from './config';
 import { createRng, hashSeed, type Rng } from './rng';
-import { applyPlayerAction, endTurn } from './game';
+import { applyPlayerAction, canDeclareContainment, declareContainment, endTurn, fileReview } from './game';
 import type { PlayerAction } from './types';
 import { blastRadius, createInitialState, toVisibleView } from './worm';
 import { RunRecorder, type RunRecord } from './pir';
@@ -43,6 +43,9 @@ export function runBot(
   const rng = createRng(hashSeed(`${seed}:bot`));
 
   for (let turn = 1; turn <= maxTurns && state.status === 'playing'; turn += 1) {
+    state = completeLifecycle(state, topology, config).state;
+    if (state.status !== 'playing') continue;
+
     // Act until the bot ends the turn or a guard trips (illegal picks waste an
     // attempt but never loop forever).
     for (let attempt = 0; attempt < 30; attempt += 1) {
@@ -51,6 +54,8 @@ export function runBot(
       const result = applyPlayerAction(state, action, topology, config);
       if (result.ok) state = result.state;
     }
+    state = completeLifecycle(state, topology, config).state;
+    if (state.status !== 'playing') continue;
     state = endTurn(state, topology, config).nextState;
   }
 
@@ -83,6 +88,11 @@ export function runBotRecorded(
   const recorder = new RunRecorder();
 
   for (let turn = 1; turn <= maxTurns && state.status === 'playing'; turn += 1) {
+    let lifecycle = completeLifecycle(state, topology, config);
+    recorder.record(state.turn, lifecycle.events);
+    state = lifecycle.state;
+    if (state.status !== 'playing') continue;
+
     for (let attempt = 0; attempt < 30; attempt += 1) {
       const action = bot(state, topology, config, rng);
       if (!action) break;
@@ -92,6 +102,10 @@ export function runBotRecorded(
         state = result.state;
       }
     }
+    lifecycle = completeLifecycle(state, topology, config);
+    recorder.record(state.turn, lifecycle.events);
+    state = lifecycle.state;
+    if (state.status !== 'playing') continue;
     const turnNow = state.turn;
     const resolved = endTurn(state, topology, config);
     recorder.record(turnNow, resolved.events);
@@ -107,6 +121,26 @@ export function runBotRecorded(
     log: recorder.log,
     downtimeHours: recorder.downtimeHours,
   };
+}
+
+function completeLifecycle(
+  state: import('./types').GameState,
+  topology: Topology,
+  config: SimConfig,
+): { state: import('./types').GameState; events: import('./types').TurnEvent[] } {
+  const events: import('./types').TurnEvent[] = [];
+  let next = state;
+  if (canDeclareContainment(next, topology)) {
+    const declaration = declareContainment(next, topology, config);
+    next = declaration.nextState;
+    events.push(...declaration.events);
+  }
+  if (next.phase === 'recovery' && next.status === 'playing') {
+    const filed = fileReview(next);
+    next = filed.nextState;
+    events.push(...filed.events);
+  }
+  return { state: next, events };
 }
 
 const ACTION_KINDS = ['scan', 'isolate', 'reconnect', 'patch', 'restore'] as const;

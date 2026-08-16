@@ -130,7 +130,7 @@ describe('PIR findings', () => {
   it('states the business override and the emergency change flatly', () => {
     const final = makeGameState(nodesWith([]), { status: 'won', emergencyUsed: true });
     const log: LoggedEvent[] = [
-      ev(3, { kind: 'action', action: 'emergency', ok: true }),
+      ev(3, { kind: 'action', action: 'emergency', outcome: 'applied', apSpent: 0 }),
       ev(4, { kind: 'override', node: 'RTR' }),
     ];
     const pir = buildPir(record({ final, log }), topology);
@@ -176,7 +176,7 @@ describe('PIR metrics', () => {
     });
     const log: LoggedEvent[] = [
       ev(2, { kind: 'encrypted', node: 'WS-1' }),
-      ev(3, { kind: 'action', action: 'emergency', ok: true }),
+      ev(3, { kind: 'action', action: 'emergency', outcome: 'applied', apSpent: 0 }),
       ev(4, { kind: 'override', node: 'RTR' }),
     ];
     const pir = buildPir(record({ final, log, downtimeHours: 9 }), topology);

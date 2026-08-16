@@ -42,6 +42,7 @@ export function createInitialState(
     score: 0,
     pressure: 0,
     findings: [],
+    phase: 'active',
     status: 'playing',
     patientZero: zero.id,
   };

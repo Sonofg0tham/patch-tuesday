@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { makeGameState, makeTopology } from './fixtures';
+import { canDeclareContainment } from './game';
 import { toTrueView, toVisibleView, visibleStateOf } from './worm';
 
 describe('fog of war', () => {
@@ -34,6 +35,15 @@ describe('fog of war', () => {
     });
     expect(toVisibleView(state, topology).BLIND).toBe('clean'); // player sees green
     expect(toTrueView(state).BLIND).toBe('infected'); // but it is rotting
+  });
+
+  it('permits containment declaration when infection is hidden by fog', () => {
+    const state = makeGameState({
+      COVERED: { state: 'clean', infectedTurns: 0 },
+      BLIND: { state: 'infected', infectedTurns: 2 },
+    });
+
+    expect(canDeclareContainment(state, topology)).toBe(true);
   });
 
   it('reveals a scanned infection even without EDR', () => {

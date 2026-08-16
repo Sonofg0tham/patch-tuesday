@@ -33,7 +33,7 @@ function formatLog(record: RunRecord): string {
     if (event.kind === 'spread-attempt') {
       if (event.success) lines.push(`  ${t}  spread ${event.source} -> ${event.target} (hit)`);
     } else if (event.kind === 'action') {
-      if (event.ok) lines.push(`  ${t}  action ${event.action}${event.node ? ' ' + event.node : ''}`);
+      if (event.outcome !== 'blocked') lines.push(`  ${t}  action ${event.action}${event.node ? ' ' + event.node : ''}`);
     } else if (event.kind === 'infected') {
       lines.push(`  ${t}  infected ${event.node}`);
     } else if (event.kind === 'encrypted') {

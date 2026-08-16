@@ -144,7 +144,7 @@ export function buildPir(
   // --- Metrics ---
   const overrides = record.log.filter((e) => e.event.kind === 'override');
   const emergency = record.log.find(
-    (e) => e.event.kind === 'action' && e.event.action === 'emergency' && e.event.ok,
+    (e) => e.event.kind === 'action' && e.event.action === 'emergency' && e.event.outcome !== 'blocked',
   );
   const metrics: PirMetric[] = [
     { label: 'Time to detect', value: `${TPLUS(1)} (initial access preceded detection by ${dwell} hours)` },
