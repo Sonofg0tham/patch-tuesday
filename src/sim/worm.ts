@@ -5,6 +5,7 @@
 
 import type { Topology, TopologyNode } from '../data/topology';
 import { SIM_CONFIG, type SimConfig } from './config';
+import { scheduleSpreadAttempts } from './pacing';
 import { createRng, hashSeed } from './rng';
 import type {
   GameState,
@@ -88,28 +89,24 @@ export function stepTurn(
   for (const [id, ns] of Object.entries(state.nodes)) nodes[id] = { ...ns };
   const events: TurnEvent[] = [];
 
-  // Only nodes infected at the start of the turn spread, in a fixed id order so
-  // RNG consumption is deterministic. Nodes infected this turn wait until next.
+  // Only nodes infected at the start of the turn spread. The seeded scheduler
+  // chooses one clean route per source, shuffles those candidates, then applies
+  // the estate-wide cap. Nodes infected this turn wait until next turn.
   const spreaders = Object.keys(nodes)
     .filter((id) => nodes[id].state === 'infected')
     .sort((a, b) => a.localeCompare(b));
 
-  for (const sourceId of spreaders) {
-    const source = topology.byId.get(sourceId);
-    if (!source) continue;
-    // Per-cable spread: the node rolls against each clean neighbour it can
-    // reach this turn along a live cable. A neighbour infected earlier this
-    // turn is no longer clean and is skipped. Neighbours are pre-sorted, so
-    // RNG use is fixed.
-    for (const targetId of liveNeighbours(source, nodes)) {
-      if (nodes[targetId].state !== 'clean') continue;
-      const roll = rng.next();
-      const success = roll < config.spreadChance;
-      events.push({ kind: 'spread-attempt', source: sourceId, target: targetId, roll, success });
-      if (success) {
-        nodes[targetId] = { ...nodes[targetId], state: 'infected', infectedTurns: 0 };
-        events.push({ kind: 'infected', node: targetId });
-      }
+  const schedule = scheduleSpreadAttempts(state, topology, rng, config.spreadAttemptCap);
+  for (const route of schedule.attempts) {
+    // A scheduled target can be shared by sources. If an earlier route infected
+    // it, there is no valid second attempt and therefore no roll to consume.
+    if (nodes[route.target]?.state !== 'clean') continue;
+    const roll = rng.next();
+    const success = roll < config.spreadChance;
+    events.push({ kind: 'spread-attempt', source: route.source, target: route.target, roll, success });
+    if (success) {
+      nodes[route.target] = { ...nodes[route.target], state: 'infected', infectedTurns: 0 };
+      events.push({ kind: 'infected', node: route.target });
     }
   }
 
@@ -128,13 +125,6 @@ export function stepTurn(
     nextState: { ...state, rngState: rng.state(), turn: state.turn + 1, nodes },
     events,
   };
-}
-
-// Neighbours reachable along a live cable. A cable is live only if neither of
-// its endpoints is isolated, so isolating a node cuts spread in both directions.
-function liveNeighbours(node: TopologyNode, nodes: Record<string, NodeState>): string[] {
-  if (nodes[node.id]?.isolated) return [];
-  return node.neighbours.filter((id) => !nodes[id]?.isolated);
 }
 
 // The fog of war. Visible state is a pure function of true state, EDR coverage

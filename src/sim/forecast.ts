@@ -33,10 +33,11 @@ export interface Forecast {
 }
 
 /**
- * Mirrors the spread rules in stepTurn() exactly, but from the visible view:
- * a visibly infected node spreads along a live cable to an apparently clean
- * neighbour. Encrypted nodes are excluded because an encrypted node has stopped
- * spreading, and patched ones because they cannot be infected.
+ * Shows every visible route that could spread next turn, rather than the secret
+ * seeded schedule used by stepTurn(). A visibly infected node can reach an
+ * apparently clean neighbour along a live cable. Encrypted nodes are excluded
+ * because an encrypted node has stopped spreading, and patched ones because
+ * they cannot be infected.
  *
  * A node that merely looks clean but is secretly already infected will be
  * marked at risk. That over-report is harmless (the player cannot tell either
