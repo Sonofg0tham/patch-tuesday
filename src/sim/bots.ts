@@ -9,7 +9,7 @@ import type { Topology, TopologyNode } from '../data/topology';
 import { SIM_CONFIG, type SimConfig } from './config';
 import { createRng, hashSeed, type Rng } from './rng';
 import { applyPlayerAction, canDeclareContainment, declareContainment, endTurn, fileReview } from './game';
-import type { PlayerAction } from './types';
+import type { GameState, PlayerAction, TurnEvent } from './types';
 import { blastRadius, createInitialState, toVisibleView } from './worm';
 import { RunRecorder, type RunRecord } from './pir';
 
@@ -43,8 +43,9 @@ export function runBot(
   const rng = createRng(hashSeed(`${seed}:bot`));
 
   for (let turn = 1; turn <= maxTurns && state.status === 'playing'; turn += 1) {
-    state = completeLifecycle(state, topology, config).state;
-    if (state.status !== 'playing') continue;
+    let lifecycle = completeLifecycle(state, topology, config);
+    state = lifecycle.state;
+    if (lifecycle.consumed || state.status !== 'playing') continue;
 
     // Act until the bot ends the turn or a guard trips (illegal picks waste an
     // attempt but never loop forever).
@@ -54,8 +55,9 @@ export function runBot(
       const result = applyPlayerAction(state, action, topology, config);
       if (result.ok) state = result.state;
     }
-    state = completeLifecycle(state, topology, config).state;
-    if (state.status !== 'playing') continue;
+    lifecycle = completeLifecycle(state, topology, config);
+    state = lifecycle.state;
+    if (lifecycle.consumed || state.status !== 'playing') continue;
     state = endTurn(state, topology, config).nextState;
   }
 
@@ -91,7 +93,8 @@ export function runBotRecorded(
     let lifecycle = completeLifecycle(state, topology, config);
     recorder.record(state.turn, lifecycle.events);
     state = lifecycle.state;
-    if (state.status !== 'playing') continue;
+    if (lifecycle.advanced) recorder.tickDowntime(state);
+    if (lifecycle.consumed || state.status !== 'playing') continue;
 
     for (let attempt = 0; attempt < 30; attempt += 1) {
       const action = bot(state, topology, config, rng);
@@ -105,7 +108,8 @@ export function runBotRecorded(
     lifecycle = completeLifecycle(state, topology, config);
     recorder.record(state.turn, lifecycle.events);
     state = lifecycle.state;
-    if (state.status !== 'playing') continue;
+    if (lifecycle.advanced) recorder.tickDowntime(state);
+    if (lifecycle.consumed || state.status !== 'playing') continue;
     const turnNow = state.turn;
     const resolved = endTurn(state, topology, config);
     recorder.record(turnNow, resolved.events);
@@ -124,23 +128,25 @@ export function runBotRecorded(
 }
 
 function completeLifecycle(
-  state: import('./types').GameState,
+  state: GameState,
   topology: Topology,
   config: SimConfig,
-): { state: import('./types').GameState; events: import('./types').TurnEvent[] } {
-  const events: import('./types').TurnEvent[] = [];
+): { state: GameState; events: TurnEvent[]; consumed: boolean; advanced: boolean } {
+  const events: TurnEvent[] = [];
   let next = state;
+  let consumed = false;
   if (canDeclareContainment(next, topology)) {
     const declaration = declareContainment(next, topology, config);
     next = declaration.nextState;
     events.push(...declaration.events);
+    consumed = true;
   }
   if (next.phase === 'recovery' && next.status === 'playing') {
     const filed = fileReview(next);
     next = filed.nextState;
     events.push(...filed.events);
   }
-  return { state: next, events };
+  return { state: next, events, consumed, advanced: next.turn !== state.turn };
 }
 
 const ACTION_KINDS = ['scan', 'isolate', 'reconnect', 'patch', 'restore'] as const;
