@@ -1,8 +1,7 @@
-// Phase 4 verification: proves all four PIR ratings are reachable in real play
-// across procedural seeds, and prints a full sample review as text so the voice
-// can be read before loading the preview. Also hunts for the redefinition case:
-// a NEAR MISS on a board that opened with a node already encrypted from the
-// dwell (judged on the response, not the inherited dwell). Run: npm run pir
+// PIR verification: catalogues the ratings reached by the locked reference bots
+// across procedural seeds, and prints sample reviews so every finding can be
+// traced to the raw event log. It also reports whether the current Phase 8 lock
+// produces the inherited-encryption NEAR MISS case. Run: npm run pir
 
 import { generateTopology } from '../src/data/topology-gen';
 import { SIM_CONFIG } from '../src/sim/config';
@@ -40,6 +39,12 @@ function formatLog(record: RunRecord): string {
       lines.push(`  ${t}  ENCRYPTED ${event.node}`);
     } else if (event.kind === 'override') {
       lines.push(`  ${t}  OVERRIDE ${event.node}`);
+    } else if (event.kind === 'containment-declaration') {
+      lines.push(`  ${t}  containment declaration ${event.confirmed ? 'CONFIRMED' : 'FAILED'}`);
+    } else if (event.kind === 'recovery-hour') {
+      lines.push(`  ${t}  recovery hour advanced`);
+    } else if (event.kind === 'review-filed') {
+      lines.push(`  ${t}  REVIEW FILED`);
     }
   }
   return lines.join('\n');
@@ -63,6 +68,7 @@ function format(hit: Hit): string {
 
 const found = new Map<Rating, Hit>();
 let inheritedNearMiss: Hit | null = null;
+let recoveryFinding: Hit | null = null;
 const SCAN = 6000;
 
 for (let i = 0; i < SCAN; i += 1) {
@@ -77,8 +83,16 @@ for (let i = 0; i < SCAN; i += 1) {
     if (!inheritedNearMiss && pir.rating === 'NEAR MISS' && inheritedEncrypted > 0) {
       inheritedNearMiss = hit;
     }
+    if (
+      !recoveryFinding &&
+      pir.findings.some((finding) =>
+        finding.text.includes('remained isolated when the review was filed'),
+      )
+    ) {
+      recoveryFinding = hit;
+    }
   }
-  if (found.size === 4 && inheritedNearMiss) break;
+  if (found.size === 4 && inheritedNearMiss && recoveryFinding) break;
 }
 
 const order: Rating[] = ['NEAR MISS', 'CONTAINED', 'REPORTABLE INCIDENT', 'TOTAL LOSS'];
@@ -107,4 +121,12 @@ if (inheritedNearMiss) {
   console.log('\n' + format(inheritedNearMiss));
 } else {
   console.log('No NEAR MISS with inherited encryption found in the scan.');
+}
+
+console.log(`\n--- RECOVERY FINDING CHECK ---`);
+if (recoveryFinding) {
+  console.log('A filed review with a critical service still isolated:');
+  console.log('\n' + format(recoveryFinding));
+} else {
+  console.log('No critical-service recovery finding found in the scan.');
 }
