@@ -237,16 +237,18 @@
   <table>
     <thead><tr><th>Measure</th><th>Required band</th></tr></thead>
     <tbody>
-      <tr><td>Greedy bot win rate</td><td>45% to 70%</td></tr>
+      <tr><td>Greedy raw survival</td><td>Reported diagnostic, no gate</td></tr>
+      <tr><td>Greedy sub-reportable containment (won with final blast radius below 25%)</td><td>45% to 70%</td></tr>
       <tr><td>Random-legal bot win rate</td><td>15% to 30%</td></tr>
-      <tr><td>Greedy average finish</td><td>T+08h to T+12h</td></tr>
-      <tr><td>Random average finish</td><td>T+07h to T+11h</td></tr>
+      <tr><td>Greedy average finish</td><td>T+10h to T+14h</td></tr>
+      <tr><td>Random average finish</td><td>T+10h to T+16h</td></tr>
       <tr><td>Runs finishing before T+06h</td><td>Below 15%</td></tr>
-      <tr><td>Runs still active after T+16h</td><td>Below 10%</td></tr>
+      <tr><td>Runs still active after T+16h</td><td>Below 25%</td></tr>
       <tr><td>Undefended boards reaching 60% loss</td><td>At least 80%</td></tr>
       <tr><td>Greedy runs reaching 80% business pressure</td><td>20% to 50%</td></tr>
     </tbody>
   </table>
+  <p>Filing sets the simulation status to won even when the final blast radius makes the incident reportable. Raw greedy survival therefore remains visible as a diagnostic, while the competent outcome gate measures won runs that finish below 25% blast radius. A blast radius of exactly 25% is reportable and does not count toward that gate.</p>
   <p>Human acceptance is 12 to 18 minutes for a competent run. Bots measure decision hours, not wall time. The product gate assumes roughly 60 to 90 seconds of human thought plus a 1.4 to 4.5 second resolution beat per hour, then verifies the estimate through first-time and returning-player sessions.</p>
 
   <h2>6. Incident command interface</h2>

@@ -7,6 +7,7 @@ import type { Topology, TopologyNode } from '../data/topology';
 import { SIM_CONFIG, type SimConfig } from './config';
 import { scheduleSpreadAttempts } from './pacing';
 import { createRng, hashSeed } from './rng';
+import { getLossReason } from './loss';
 import type {
   GameState,
   NodeState,
@@ -55,7 +56,9 @@ export function createInitialState(
     state = stepTurn(state, topology, config).nextState;
   }
 
-  return { ...state, turn: 1 };
+  const handover = { ...state, turn: 1 };
+  const lossReason = getLossReason(handover, topology, config);
+  return lossReason === null ? handover : { ...handover, status: 'lost', lossReason };
 }
 
 // Patient zero: a random node of the configured type, preferring the

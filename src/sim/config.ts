@@ -57,13 +57,13 @@ export interface SimConfig {
 }
 
 export const SIM_CONFIG: SimConfig = {
-  spreadChance: 0.6,
-  spreadAttemptCap: 4,
-  encryptAfterTurns: 3,
+  spreadChance: 1,
+  spreadAttemptCap: 3,
+  encryptAfterTurns: 7,
   patientZeroType: 'workstation',
   patientZeroEdgeOnly: true,
   lossBlastRadius: 0.6,
-  dwellTurns: 3,
+  dwellTurns: 2,
 
   apPerTurn: 2,
   backupCredits: 2,

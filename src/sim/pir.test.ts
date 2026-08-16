@@ -181,7 +181,7 @@ describe('PIR metrics', () => {
     ];
     const pir = buildPir(record({ final, log, downtimeHours: 9 }), topology);
     const metric = (label: string): string => pir.metrics.find((m) => m.label === label)?.value ?? '';
-    expect(metric('Time to detect')).toContain('preceded detection by 3 hours');
+    expect(metric('Time to detect')).toContain('preceded detection by 2 hours');
     expect(metric('Time to contain')).toBe('T+06h');
     expect(metric('Downtime')).toContain('9 host-hours');
     expect(metric('Backup credits burned')).toBe('2 of 2');

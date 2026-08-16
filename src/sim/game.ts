@@ -13,7 +13,8 @@ import type {
   TurnEvent,
   TurnResult,
 } from './types';
-import { blastRadius, createInitialState, infectedCount, stepTurn, toVisibleView } from './worm';
+import { getLossReason } from './loss';
+import { createInitialState, infectedCount, stepTurn, toVisibleView } from './worm';
 
 // A fresh copy of the state with its nodes cloned, so actions never mutate the
 // caller's state.
@@ -164,18 +165,10 @@ function turnPenalty(state: GameState, topology: Topology, config: SimConfig): n
 
 // Sets loss status. A successful run ends only when the player files the PIR.
 function applyStatus(state: GameState, topology: Topology, config: SimConfig): void {
-  const dcEncrypted = topology.nodes.some(
-    (n) => n.type === 'domain-controller' && state.nodes[n.id]?.state === 'encrypted',
-  );
-  if (dcEncrypted) {
+  const lossReason = getLossReason(state, topology, config);
+  if (lossReason !== null) {
     state.status = 'lost';
-    state.lossReason = 'domain-controller';
-    return;
-  }
-  if (blastRadius(state) >= config.lossBlastRadius) {
-    state.status = 'lost';
-    state.lossReason = 'blast-radius';
-    return;
+    state.lossReason = lossReason;
   }
 }
 

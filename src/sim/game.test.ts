@@ -13,6 +13,7 @@ import type { Move } from './types';
 import { stepTurn, visibleStateOf } from './worm';
 
 const noSpreadConfig = { ...SIM_CONFIG, spreadChance: 0, dwellTurns: 0 };
+const threeTurnEncryption = { ...SIM_CONFIG, encryptAfterTurns: 3 };
 
 function makeCleanGameState(topology: ReturnType<typeof makeTopology>) {
   return makeGameState(
@@ -169,14 +170,14 @@ describe('turn resolution: score and win/lose', () => {
       B: { state: 'clean', infectedTurns: 0 },
       C: { state: 'clean', infectedTurns: 0 },
     });
-    state = endTurn(state, topology).nextState; // A -> encrypted, no infected left
+    state = endTurn(state, topology, threeTurnEncryption).nextState; // A -> encrypted, no infected left
     expect(state.status).toBe('playing');
   });
 
   it('loses when the domain controller is encrypted', () => {
     const topology = makeTopology([{ id: 'DC', type: 'domain-controller' }], []);
     let state = makeGameState({ DC: { state: 'infected', infectedTurns: 2 } });
-    state = endTurn(state, topology).nextState;
+    state = endTurn(state, topology, threeTurnEncryption).nextState;
     expect(state.status).toBe('lost');
     expect(state.lossReason).toBe('domain-controller');
   });

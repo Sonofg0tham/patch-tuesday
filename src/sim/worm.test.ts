@@ -11,7 +11,7 @@ import {
   stepTurn,
 } from './worm';
 
-const CONFIG = SIM_CONFIG;
+const CONFIG = { ...SIM_CONFIG, spreadChance: 0.6, encryptAfterTurns: 3 };
 
 const NO_DWELL = { ...SIM_CONFIG, dwellTurns: 0 };
 
@@ -64,6 +64,53 @@ describe('dwell time', () => {
     const state = createInitialState(topology, 'DWELL', NO_DWELL);
     const infected = Object.values(state.nodes).filter((n) => n.state === 'infected');
     expect(infected).toHaveLength(1);
+  });
+
+  it('hands over an estate already lost when dwell encrypts the domain controller', () => {
+    const topology = makeTopology([{ id: 'DC', type: 'domain-controller' }], []);
+    const state = createInitialState(topology, 'dwell-dc-loss', {
+      ...SIM_CONFIG,
+      patientZeroType: 'domain-controller',
+      dwellTurns: 1,
+      encryptAfterTurns: 1,
+      spreadChance: 0,
+    });
+
+    expect(state.status).toBe('lost');
+    expect(state.lossReason).toBe('domain-controller');
+    expect(state.turn).toBe(1);
+  });
+
+  it('hands over an estate already lost when dwell crosses the blast threshold', () => {
+    const topology = makeTopology([{ id: 'A' }, { id: 'B' }, { id: 'C' }], [
+      ['A', 'B'],
+      ['B', 'C'],
+    ]);
+    const state = createInitialState(topology, 'dwell-blast-loss', {
+      ...SIM_CONFIG,
+      dwellTurns: 2,
+      encryptAfterTurns: 1,
+      spreadChance: 1,
+      spreadAttemptCap: 3,
+    });
+
+    expect(state.status).toBe('lost');
+    expect(state.lossReason).toBe('blast-radius');
+    expect(state.turn).toBe(1);
+  });
+
+  it('keeps an ordinary below-threshold dwell handover active', () => {
+    const topology = makeTopology([{ id: 'WS' }], []);
+    const state = createInitialState(topology, 'dwell-active', {
+      ...SIM_CONFIG,
+      dwellTurns: 1,
+      encryptAfterTurns: 10,
+      spreadChance: 0,
+    });
+
+    expect(state.status).toBe('playing');
+    expect(state.lossReason).toBeUndefined();
+    expect(state.turn).toBe(1);
   });
 });
 
