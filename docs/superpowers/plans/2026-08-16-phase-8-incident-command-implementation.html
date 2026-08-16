@@ -1,0 +1,1146 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Patch Tuesday Phase 8 Implementation Plan</title>
+<style>
+  :root {
+    --bg: #eef4f6;
+    --ink: #101a20;
+    --muted: #526671;
+    --accent: #087a9e;
+    --threat: #c20e62;
+    --pressure: #8a5c00;
+    --card: #ffffff;
+    --border: #9bbfcd;
+    --code: #e3eef2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0e14;
+      --ink: #c5cdd8;
+      --muted: #a3b2bc;
+      --accent: #4cc9f0;
+      --threat: #f72585;
+      --pressure: #f5a524;
+      --card: #111923;
+      --border: #2f819a;
+      --code: #101b25;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { color-scheme: light dark; scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    padding: 2.5rem 1.25rem 5rem;
+    background: var(--bg);
+    color: var(--ink);
+    font: 17px/1.68 "Fira Code", "Cascadia Code", Consolas, monospace;
+  }
+  main { max-width: 78ch; margin: 0 auto; }
+  header { border-top: 4px solid var(--accent); padding: 1.25rem 0 1.5rem; }
+  .kicker, .eyebrow {
+    color: var(--accent);
+    font-size: .82rem;
+    font-weight: 700;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+  }
+  h1, h2, h3, h4 { font-family: "Chakra Petch", Bahnschrift, sans-serif; line-height: 1.2; }
+  h1 { margin: .4rem 0 .65rem; font-size: clamp(2rem, 6vw, 3.35rem); letter-spacing: .03em; }
+  h2 { margin: 2.8rem 0 .8rem; padding-top: 1.2rem; border-top: 1px solid var(--border); color: var(--accent); font-size: 1.55rem; }
+  h3 { margin: 2.25rem 0 .7rem; padding: .85rem 1rem; border-left: 4px solid var(--accent); background: var(--card); font-size: 1.25rem; }
+  h4 { margin: 1.6rem 0 .55rem; color: var(--pressure); font-size: 1.05rem; }
+  p, li { margin: 0 0 .85rem; }
+  ul, ol { padding-left: 1.55rem; }
+  .lead { color: var(--muted); max-width: 68ch; font-size: 1.03rem; }
+  .meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: .65rem 1rem;
+    padding: 1rem;
+    margin-top: 1.4rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+  }
+  .meta b { display: block; color: var(--accent); font-size: .82rem; text-transform: uppercase; letter-spacing: .08em; }
+  nav { margin: 1.2rem 0 2rem; padding: 1rem; border: 1px solid var(--border); background: var(--card); }
+  nav a { display: inline-block; margin: .25rem .65rem .25rem 0; }
+  a { color: var(--accent); }
+  strong { color: var(--ink); }
+  code, pre { font-family: "Fira Code", "Cascadia Code", Consolas, monospace; background: var(--code); }
+  code { padding: .1em .32em; border: 1px solid var(--border); border-radius: 2px; font-size: .92em; }
+  pre { overflow-x: auto; padding: 1rem; border: 1px solid var(--border); border-radius: 2px; line-height: 1.5; }
+  pre code { padding: 0; border: 0; background: none; }
+  blockquote { margin: 1rem 0; padding: .8rem 1rem; border-left: 4px solid var(--pressure); background: var(--card); }
+  .check { list-style: none; margin-left: -1.35rem; padding-left: 1.7rem; position: relative; }
+  .check::before { content: "□"; position: absolute; left: 0; color: var(--accent); font-weight: 700; }
+  .task-index { color: var(--muted); }
+  footer { margin-top: 3rem; border-top: 1px solid var(--border); padding-top: 1rem; color: var(--muted); font-size: .88rem; }
+  @media (max-width: 560px) {
+    body { padding: 1.5rem .9rem 3rem; }
+    .meta { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="kicker">Phase 8 execution dossier · 16 August 2026</div>
+    <h1>Incident Command</h1>
+    <p class="lead">A test-first implementation plan for the new incident arc, fog-safe telemetry theatre, procedural state language, responsive command interface and synthesised audio.</p>
+    <div class="meta">
+      <div><b>Status</b>Approved for continuous execution</div>
+      <div><b>Branch</b>phase-8-incident-command</div>
+      <div><b>Tasks</b>10 reviewed slices</div>
+      <div><b>Rule</b>Red, green, review, commit</div>
+    </div>
+  </header>
+  <nav aria-label="Task index" id="task-index"><span class="eyebrow">Task index</span><br></nav>
+  <article id="rendered-plan"></article>
+  <footer>Patch Tuesday · Phase 8 · agent-ready implementation plan</footer>
+</main>
+
+<script id="plan-source" type="text/plain">
+# Phase 8 Incident Command Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Turn Patch Tuesday's five-hour tactical sketch into a measured 12 to 18 minute incident with a declaration gamble, meaningful recovery, truthful enemy-turn theatre, clearer guidance, original procedural visuals and an audio arc that earns its ending.
+
+**Architecture:** Keep simulation, fog projection and presentation as separate layers. The deterministic simulation emits complete true events; `telemetry.ts` converts them to a safe observable contract; DOM and Three.js consumers receive only that contract. Build core pacing and lifecycle first, freeze bot policy and balance, then layer PIR, guidance, theatre, visuals, layout and audio on the proven rules.
+
+**Tech Stack:** TypeScript 5.8 strict, Three.js 0.182, Vite 7, Vitest 4, Web Audio, HTML and CSS. No new runtime dependency.
+
+**Spec:** `docs/superpowers/specs/2026-08-16-phase-8-incident-command-design.html`
+
+## Global Constraints
+
+- `GAME_DESIGN.md` v0.2 and the linked Phase 8 spec are binding. The spec wins if this plan accidentally paraphrases it incorrectly.
+- UK English in UI, comments, tests, documentation and commits. No em dashes.
+- Every production behaviour starts with a focused failing test that is observed failing for the intended reason.
+- The simulation remains deterministic from seed plus ordered moves. No `Math.random()` in simulation code.
+- Normal rendering, audio and UI never receive hidden truth except through the tested fog-safe projection.
+- All models, textures, glyphs and sounds stay procedural and project-local. Do not add Blender, Meshy, image, model or audio files.
+- No twitch input, decision timer, gamepad, touch gameplay, backend, accounts or v2 threat content.
+- Magenta is exclusive to observable compromise. Forecast risk and uncertainty use amber. Defence and verified control use cyan.
+- DOM controls remain keyboard-operable with visible focus. State is words plus shape or glyph, never colour alone.
+- Secondary game text uses at least `0.875rem`, normal text meets WCAG AA, and the menu or desktop notice reflows at 400% without horizontal page scrolling.
+- Normal resolution lasts 1.4 to 4.5 seconds. Reduced motion removes travel and flicker. No effect flashes more than three times in one second.
+- Keep healthy high-tier rendering below 3ms average and 8ms worst over the existing 120-frame bench on the verification machine.
+- Preserve the user's unrelated `CLAUDE.md`, `AGENTS.md` and `CLAUDE.md.pre-consolidation.bak` worktree changes. Never stage them.
+- Each task ends with focused tests, `npm.cmd run typecheck`, `npm.cmd run lint`, a self-review, an independent task review and a conventional commit.
+- Named fixture builders in code snippets are local test helpers returning the literal topology, state, event or outcome named by the helper. Keep them in the relevant test file and never add a production method solely for a test.
+
+## Spec Coverage Map
+
+- Incident pacing and scheduler: Tasks 1 and 3.
+- Declaration, recovery and win condition: Tasks 2 and 3.
+- PIR chronology, rating and findings: Task 4.
+- Fog-safe presentation boundary and consequence guidance: Task 5.
+- Handover, objective, forecast, timeline and asset register: Task 6.
+- Truthful bounded threat-resolution theatre: Task 7.
+- Procedural glyphs, deformation, hierarchy, stencils and action effects: Task 8.
+- Safe-area framing, responsive drawer, text scaling and debug boundary: Task 9.
+- Distinct audio, adaptive score, compressor and all final verification: Task 10.
+
+---
+
+### Task 1: Deterministic capped threat scheduler
+
+**Files:**
+- Create: `src/sim/pacing.ts`
+- Create: `src/sim/pacing.test.ts`
+- Modify: `src/sim/config.ts`
+- Modify: `src/sim/worm.ts`
+- Modify: `src/sim/worm.test.ts`
+- Modify: `src/sim/forecast.ts`
+
+**Interfaces:**
+- Consumes: `GameState`, `Topology`, `Rng`, `SimConfig`.
+- Produces: `SpreadRoute`, `SpreadSchedule`, `scheduleSpreadAttempts(state, topology, rng, attemptCap)` and `SimConfig.spreadAttemptCap`.
+- Preserves: `stepTurn(state, topology, config): TurnResult` and the rule that newly infected nodes neither spread nor age until the next hour.
+
+- [ ] **Step 1: Add focused scheduler tests before production code**
+
+Create tests that hand-build two infected sources with several clean live neighbours. Assert literal route lists from a deterministic `Rng`, not values calculated with the scheduler itself.
+
+```ts
+import { describe, expect, test } from 'vitest';
+import { createRng } from './rng';
+import { makeGameState, makeTopology } from './fixtures';
+import { scheduleSpreadAttempts } from './pacing';
+
+test('schedules at most one uniformly selected target per source', () => {
+  const topology = makeTopology([
+    ['SRC-A', ['A-1', 'A-2']],
+    ['SRC-B', ['B-1', 'B-2']],
+  ]);
+  const state = makeGameState(topology, {
+    'SRC-A': { state: 'infected', infectedTurns: 0 },
+    'SRC-B': { state: 'infected', infectedTurns: 0 },
+  });
+
+  const result = scheduleSpreadAttempts(state, topology, createRng(1234), 4);
+
+  expect(result.attempts).toHaveLength(2);
+  expect(new Set(result.attempts.map((route) => route.source)).size).toBe(2);
+});
+
+test('applies the estate cap after seeded candidate shuffling', () => {
+  const topology = makeFourSourceTopology();
+  const state = makeFourSourceState(topology);
+
+  const result = scheduleSpreadAttempts(state, topology, createRng(99), 3);
+
+  expect(result.attempts).toHaveLength(3);
+  expect(result.eligibleSources).toBe(4);
+});
+```
+
+Also cover isolated sources, isolated targets, non-clean targets, stable result for identical RNG state, changed result for a different RNG state and no mutation of the caller's state.
+
+Define `makeFourSourceTopology()` and `makeFourSourceState()` locally with four infected sources, one clean neighbour per source and no isolation. Their only purpose is the literal estate-cap fixture.
+
+- [ ] **Step 2: Run the new tests and verify the red state**
+
+Run: `npm.cmd test -- src/sim/pacing.test.ts src/sim/worm.test.ts`
+
+Expected: FAIL because `src/sim/pacing.ts` and `spreadAttemptCap` do not exist, then fail the old per-cable expectation after the imports compile.
+
+- [ ] **Step 3: Implement the pure schedule and integrate it into `stepTurn`**
+
+Use this public contract:
+
+```ts
+export interface SpreadRoute {
+  source: string;
+  target: string;
+}
+
+export interface SpreadSchedule {
+  eligibleSources: number;
+  eligibleEdges: number;
+  attempts: SpreadRoute[];
+}
+
+export function scheduleSpreadAttempts(
+  state: GameState,
+  topology: Topology,
+  rng: Rng,
+  attemptCap: number,
+): SpreadSchedule;
+```
+
+For each sorted infected non-isolated source, sort eligible clean non-isolated neighbours, use `rng.pick()` once to choose its candidate, shuffle candidates with seeded Fisher-Yates, then slice to `Math.max(0, attemptCap)`. In `stepTurn`, resolve spread rolls only for scheduled routes. Skip a later route when an earlier success made its target non-clean. Persist the RNG state after selection and rolls. Add `spreadAttemptCap: 4` to `SIM_CONFIG`.
+
+Update the forecast comment to state that it shows every visible possible route, not the secret seeded schedule.
+
+- [ ] **Step 4: Verify green and guard the old infection clock**
+
+Run: `npm.cmd test -- src/sim/pacing.test.ts src/sim/worm.test.ts src/sim/forecast.test.ts src/sim/rng.test.ts`
+
+Expected: all focused suites pass, including the existing 60% single-edge calibration, encryption clock, isolation and deterministic replay assumptions.
+
+- [ ] **Step 5: Run static checks and commit**
+
+Run `npm.cmd run typecheck`, then `npm.cmd run lint`.
+
+Commit only the files in this task with: `feat: schedule capped threat attempts`
+
+### Task 2: Containment declaration, recovery and explicit action outcomes
+
+**Files:**
+- Modify: `src/sim/types.ts`
+- Modify: `src/sim/fixtures.ts`
+- Modify: `src/sim/worm.ts`
+- Modify: `src/sim/game.ts`
+- Modify: `src/sim/game.test.ts`
+- Modify: `src/sim/fog.test.ts`
+
+**Interfaces:**
+- Consumes: scheduler-backed `stepTurn()` from Task 1.
+- Produces: `IncidentPhase`, expanded `Finding`, expanded `Move`, `canDeclareContainment()`, `declareContainment()`, `fileReview()` and phase-aware `endTurn()`.
+- Contract: `ActionResult.ok` means the command was accepted. A patch probe therefore returns `ok: true`, spends 1 AP and emits `outcome: 'probe'`. A blocked command returns `ok: false`, spends zero and emits `outcome: 'blocked'`.
+
+- [ ] **Step 1: Write failing lifecycle tests**
+
+Add tests for these literal transitions:
+
+```ts
+test('a hidden foothold makes a containment declaration fail without localisation', () => {
+  const state = makeGameState(topology, {
+    HIDDEN: { state: 'infected', infectedTurns: 0 },
+  });
+  state.ap = 1;
+
+  const result = declareContainment(state, topology, noSpreadConfig);
+
+  expect(result.nextState.phase).toBe('active');
+  expect(result.nextState.ap).toBe(noSpreadConfig.apPerTurn);
+  expect(result.nextState.turn).toBe(state.turn + 1);
+  expect(result.events[0]).toEqual({ kind: 'containment-declaration', confirmed: false });
+  expect(result.events[0]).not.toHaveProperty('node');
+});
+
+test('a clean true estate enters recovery without resolving another hour', () => {
+  const state = makeCleanGameState(topology);
+  state.ap = 1;
+
+  const result = declareContainment(state, topology);
+
+  expect(result.nextState).toMatchObject({ phase: 'recovery', status: 'playing', ap: 2 });
+  expect(result.nextState.turn).toBe(state.turn);
+  expect(result.events).toEqual([{ kind: 'containment-declaration', confirmed: true }]);
+});
+
+test('filing the review is the only successful terminal transition', () => {
+  const state = makeCleanGameState(topology);
+  state.phase = 'recovery';
+
+  expect(fileReview(state).nextState.status).toBe('won');
+});
+```
+
+Also cover: a visible infection blocks declaration without spending AP; normal actions are rejected outside their allowed phase; recovery allows only Reconnect and Restore; a recovery hour emits no spread or encryption event but accrues isolation pressure and impact; successful declaration does not accrue pressure or impact; false declaration records a High finding; loss still takes precedence; replay reproduces declaration, recovery and filing byte-for-byte; redundant sensor spends nothing; patch probe is accepted and recorded with `apSpent: 1`.
+
+- [ ] **Step 2: Run the lifecycle tests and verify they fail for missing behaviour**
+
+Run: `npm.cmd test -- src/sim/game.test.ts src/sim/fog.test.ts`
+
+Expected: FAIL because the phase, commands and event variants do not exist and automatic victory still fires.
+
+- [ ] **Step 3: Add the state and event schema**
+
+Use these exact types:
+
+```ts
+export type IncidentPhase = 'active' | 'recovery';
+export type ActionOutcome = 'applied' | 'probe' | 'blocked';
+
+export type Move =
+  | PlayerAction
+  | { kind: 'end-turn' }
+  | { kind: 'declare-containment' }
+  | { kind: 'file-review' };
+
+export type TurnEvent =
+  | { kind: 'patient-zero'; node: string }
+  | { kind: 'spread-attempt'; source: string; target: string; roll: number; success: boolean }
+  | { kind: 'infected'; node: string }
+  | { kind: 'encrypted'; node: string }
+  | { kind: 'override'; node: string }
+  | { kind: 'action'; action: ActionKind; node?: string; outcome: ActionOutcome; apSpent: number; reason?: string }
+  | { kind: 'containment-declaration'; confirmed: boolean }
+  | { kind: 'review-filed' };
+```
+
+Add `phase: IncidentPhase` to `GameState` and initialise it to `active`. Expand `Finding` for `business-override` and `premature-declaration`, with `node` required only for the override. Update `fixtures.ts` defaults before changing the game logic so test construction stays compact.
+
+In `game.test.ts`, define `noSpreadConfig` as `{ ...SIM_CONFIG, spreadChance: 0, dwellTurns: 0 }`. State builders clone fixture nodes so each expectation starts from independent literal data.
+
+- [ ] **Step 4: Implement phase-aware commands and hourly accounting**
+
+`canDeclareContainment()` uses `toVisibleView()` and returns true only in active play with zero visible infected nodes. `declareContainment()` checks that public gate, then checks true `infectedCount()`. Failure records the finding and calls the normal active-hour resolver exactly once. Success clones state, discards unused AP, sets `phase: 'recovery'`, refreshes AP and does not call the threat or accounting step.
+
+Factor active and recovery accounting so recovery advances isolation age, pressure, overrides, AP, score and clock without calling `stepTurn()`. Restrict `applyStatus()` to losses. `fileReview()` accepts only playing recovery state, emits `review-filed` and sets `status: 'won'`.
+
+Update replay dispatch for all three command kinds.
+
+- [ ] **Step 5: Verify lifecycle green and commit**
+
+Run: `npm.cmd test -- src/sim/game.test.ts src/sim/fog.test.ts src/sim/worm.test.ts`
+
+Run `npm.cmd run typecheck`, then `npm.cmd run lint`.
+
+Commit: `feat: add containment and recovery phases`
+
+### Task 3: Frozen bot policy and Phase 8 pacing gate
+
+**Files:**
+- Modify: `src/sim/bots.ts`
+- Modify: `src/sim/bots.test.ts`
+- Modify: `src/sim/stats.ts`
+- Modify: `src/sim/stats.test.ts`
+- Create: `src/sim/pacing-gate.ts`
+- Create: `src/sim/pacing-gate.test.ts`
+- Create: `scripts/pacing-sweep.ts`
+- Modify: `scripts/bot-stats.ts`
+- Modify: `scripts/gen-sweep.ts`
+- Modify: `scripts/dwell-sweep.ts`
+- Modify: `scripts/spread-stats.ts`
+- Modify: `package.json`
+- Modify: `src/sim/config.ts` after the sweep selects a passing candidate
+- Modify: `GAME_DESIGN.md` with the measured lock
+
+**Interfaces:**
+- Consumes: declaration, recovery and filing commands from Task 2.
+- Produces: `BotDecision`, one shared deterministic bot driver, expanded `BotOutcome`, `PacingGateResult`, `evaluatePacingGate()` and `npm run pacing`.
+- Policy lock: both bots declare whenever declaration is available. Greedy recovery improves the highest-value legal critical service before filing. Random recovery chooses from legal recovery actions and has a deterministic 25% file chance per decision, then files when none remain. Do not change this policy during tuning.
+
+- [ ] **Step 1: Write failing driver and gate tests**
+
+```ts
+test('runBot and runBotRecorded finish in the same final state', () => {
+  const outcome = runBot(topology, 'policy-lock', greedyBot, testConfig);
+  const record = runBotRecorded(topology, 'policy-lock', greedyBot, testConfig);
+
+  expect(record.final.status).toBe(outcome.status);
+  expect(record.final.turn).toBe(outcome.turns);
+  expect(record.final.score).toBe(outcome.score);
+});
+
+test('the pacing gate rejects an early competent incident', () => {
+  const result = evaluatePacingGate({
+    greedy: fabricatedOutcomes({ winRate: 0.6, averageTurn: 5, earlyRate: 0.8 }),
+    random: fabricatedOutcomes({ winRate: 0.2, averageTurn: 8 }),
+    undefendedLossRate: 0.85,
+  });
+
+  expect(result.pass).toBe(false);
+  expect(result.failures).toContain('greedy average finish');
+});
+```
+
+Cover recovery termination, declaration determinism, max pressure tracking, premature declaration count, containment and filing turns, early finish, late run and the exact inclusive gate boundaries.
+
+Keep `fabricatedOutcomes()` in `pacing-gate.test.ts`. It returns literal `BotOutcome[]` with the requested win rate, average turn, early rate and defaults for every other field, so gate expectations never reuse production aggregation logic.
+
+- [ ] **Step 2: Run focused tests and observe the red state**
+
+Run: `npm.cmd test -- src/sim/bots.test.ts src/sim/stats.test.ts src/sim/pacing-gate.test.ts`
+
+Expected: FAIL because bots cannot issue Phase 8 commands and the gate module is missing.
+
+- [ ] **Step 3: Implement one shared driver and literal gate bands**
+
+Use:
+
+```ts
+export type BotDecision = PlayerAction | 'end-turn' | 'declare-containment' | 'file-review';
+
+export interface BotOutcome {
+  status: GameState['status'];
+  turns: number;
+  containmentTurn: number | null;
+  filingTurn: number | null;
+  maxPressure: number;
+  prematureDeclarations: number;
+  blastRadius: number;
+  score: number;
+  backupsUsed: number;
+  emergencyUsed: boolean;
+}
+
+export interface PacingGateInput {
+  greedy: readonly BotOutcome[];
+  random: readonly BotOutcome[];
+  undefendedLossRate: number;
+}
+
+export interface PacingGateResult {
+  pass: boolean;
+  failures: string[];
+  metrics: {
+    greedyWinRate: number;
+    randomWinRate: number;
+    greedyAverageTurn: number;
+    randomAverageTurn: number;
+    earlyFinishRate: number;
+    lateRunRate: number;
+    undefendedLossRate: number;
+    greedyHighPressureRate: number;
+  };
+}
+```
+
+Make `runBot()` and `runBotRecorded()` call the same internal state machine and differ only in recorder hooks. The driver has a 60-hour safety cap and returns `playing` if exhausted.
+
+`evaluatePacingGate()` checks all eight spec bands exactly. Its result lists one stable failure label per missed band so the script output is machine-readable and human-readable.
+
+- [ ] **Step 4: Add the ordered sweep and run it**
+
+Add `"pacing": "vite-node scripts/pacing-sweep.ts"`. The script evaluates 4,000 greedy, 4,000 random and 4,000 undefended seeds per candidate in this order:
+
+1. cap 3, 4, 5 with dwell 3 and chance 0.60;
+2. dwell 2, 3 with the best cap only when no cap passes;
+3. chance 0.55, 0.60, 0.65 with the best cap and dwell only when still needed.
+
+Select the first full PASS, print every band, and exit non-zero if none pass. Do not silently widen the bands.
+
+Run: `npm.cmd run pacing`
+
+Expected: at least one candidate prints PASS. If none passes, record every measured result in the task report.
+
+If the entire approved search is exhausted without a PASS, leave `SIM_CONFIG` unchanged and return `BLOCKED` with the complete table. The controller must record a ruling before extending the search; the implementer must not widen bands or alter the locked AP, backup, pressure or loss rules.
+
+- [ ] **Step 5: Lock and regression-check the measured configuration**
+
+Put the selected cap, dwell and chance in `SIM_CONFIG`. Re-run:
+
+- `npm.cmd run pacing`
+- `npm.cmd run gen`
+- `npm.cmd run stats`
+- `npm.cmd test -- src/sim/bots.test.ts src/sim/stats.test.ts src/sim/pacing-gate.test.ts`
+- `npm.cmd run typecheck`
+- `npm.cmd run lint`
+
+Update only the measured Phase 8 paragraph in `GAME_DESIGN.md` with the actual values and results.
+
+Commit: `feat: lock phase 8 incident pacing`
+
+### Task 4: PIR chronology, recovery findings and final rating
+
+**Files:**
+- Modify: `src/sim/pir.ts`
+- Modify: `src/sim/pir.test.ts`
+- Modify: `scripts/pir-demo.ts`
+- Modify: `src/sim/bots.ts`
+- Modify: `src/main.ts`
+
+**Interfaces:**
+- Consumes: explicit action outcomes, declaration and review events from Task 2.
+- Produces: chronological coverage-gap findings, declaration/recovery findings, `Impact`, containment and filing metrics, and the Phase 8 `ratingOf()` rules.
+
+- [ ] **Step 1: Write chronology and rating regressions first**
+
+```ts
+test('a later sensor cannot erase an earlier coverage-gap finding', () => {
+  const record = makeRecord({
+    log: [
+      spreadSuccess(2, 'HIDDEN-SOURCE', 'TARGET'),
+      sensorApplied(3, 'HIDDEN-SOURCE'),
+      reviewFiled(5),
+    ],
+  });
+
+  expect(buildPir(record, topology).findings.map((finding) => finding.text))
+    .toContain(expect.stringContaining('EDR coverage gap on'));
+});
+
+test('premature declaration caps an otherwise near miss at contained', () => {
+  const record = makeWinningRecord({
+    blastRadius: 0,
+    log: [declarationFailed(3), declarationConfirmed(6), reviewFiled(6)],
+  });
+
+  expect(ratingOf(record)).toBe('CONTAINED');
+});
+```
+
+Also cover: built-in EDR known from detection; patch probe adds knowledge only from its own timestamp; failed declaration High finding; isolated router/server Medium finding; isolated backup/DC High finding; isolated workstation no recovery finding; confirmed containment time from event; filing time and recovery duration; Impact metric from `final.score`; reportable threshold at exactly 25%; TOTAL LOSS precedence.
+
+- [ ] **Step 2: Run PIR tests and observe expected failures**
+
+Run: `npm.cmd test -- src/sim/pir.test.ts`
+
+Expected: the chronology regression fails because current code checks final reveal state, and the new events and metrics are absent.
+
+- [ ] **Step 3: Implement one chronological event walk**
+
+Seed a `Set<string>` with built-in EDR nodes. Walk `RunRecord.log` in order. Before evaluating each successful spread, use the set as it existed at that timestamp. Add a node after an applied sensor or accepted patch probe. Store first gap time and count per source.
+
+Implement the exact rating order:
+
+```ts
+if (record.final.status === 'lost') return 'TOTAL LOSS';
+if (blastRadius(record.final) >= 0.25) return 'REPORTABLE INCIDENT';
+if (hasPostDetectionEncryption || hasPrematureDeclaration || hasUnrecoveredCriticalService) {
+  return 'CONTAINED';
+}
+return 'NEAR MISS';
+```
+
+Use the confirmed declaration event for Time to contain and the review-filed event for Time to file. Keep abandonment unrated.
+
+- [ ] **Step 4: Verify PIR output and recorder parity**
+
+Run: `npm.cmd test -- src/sim/pir.test.ts src/sim/bots.test.ts`
+
+Run: `npm.cmd run pir`
+
+Expected: demo output includes declaration, recovery duration, Impact and any real recovery finding without losing the existing initial-access, encryption, override or emergency findings.
+
+- [ ] **Step 5: Run static checks and commit**
+
+Run `npm.cmd run typecheck`, then `npm.cmd run lint`.
+
+Commit: `fix: preserve incident chronology in reviews`
+
+### Task 5: Fog-safe telemetry and situation model
+
+**Files:**
+- Create: `src/sim/telemetry.ts`
+- Create: `src/sim/telemetry.test.ts`
+- Create: `src/ui/situation.ts`
+- Create: `src/ui/situation.test.ts`
+- Modify: `src/sim/fog.test.ts`
+- Modify: `src/ui/actions.ts`
+- Modify: `src/ui/overlay.ts`
+
+**Interfaces:**
+- Consumes: true `TurnEvent[]`, before and after `GameState`, topology and visible action catalogue.
+- Produces: `NodePresentationState`, `PresentationView`, `ObservableTurnEvent`, `toPresentationView()`, `projectTurnEvents()`, `deriveObjective()`, `deriveActionConsequences()` and `NodeInspectionModel`.
+- Security boundary: only `telemetry.ts` receives true state for projection. All presentation callers receive its output.
+
+- [ ] **Step 1: Write adversarial fog tests before the projection**
+
+```ts
+test('groups hidden attempts without exposing source, target, success or side', () => {
+  const projected = projectTurnEvents(
+    [
+      { kind: 'spread-attempt', source: 'LEFT-HIDDEN', target: 'RIGHT-HIDDEN', roll: 0.1, success: true },
+      { kind: 'infected', node: 'RIGHT-HIDDEN' },
+    ],
+    beforeState,
+    afterState,
+    topology,
+  );
+
+  expect(projected).toEqual([{ kind: 'telemetry-gap', attempts: 1 }]);
+  expect(JSON.stringify(projected)).not.toMatch(/LEFT|RIGHT|0\.1|success/);
+});
+
+test('uses the real route when both endpoints are observable', () => {
+  const projected = projectTurnEvents([visibleAttempt], beforeState, afterState, topology);
+  expect(projected[0]).toEqual({ kind: 'attempt', source: 'EDR-A', target: 'EDR-B', success: true });
+});
+```
+
+Require both endpoints to be observed at the start of resolution before a route is localised. Encryption, overrides and declaration outcomes are always observable because their game consequences are public. Aggregate all hidden attempts into one entry per resolution.
+
+For objectives, test this priority with literal strings: imminent visible encryption, pressure at 80%, visible route, clear board with blind spots, clear observed estate, isolated critical recovery, restorable loss, file review.
+
+- [ ] **Step 2: Run focused tests and verify red**
+
+Run: `npm.cmd test -- src/sim/telemetry.test.ts src/ui/situation.test.ts src/sim/fog.test.ts`
+
+Expected: FAIL because the new modules and contracts do not exist.
+
+- [ ] **Step 3: Implement the presentation contract and safe derivations**
+
+Use:
+
+```ts
+export interface NodePresentationState {
+  id: string;
+  visibleState: VisibleState;
+  observed: boolean;
+  isolated: boolean;
+  isolationAge: number;
+  edr: boolean;
+}
+
+export interface PresentationView {
+  nodes: Record<string, NodePresentationState>;
+}
+
+export type ObservableTurnEvent =
+  | { kind: 'attempt'; source: string; target: string; success: boolean }
+  | { kind: 'telemetry-gap'; attempts: number }
+  | { kind: 'infected'; node: string }
+  | { kind: 'encrypted'; node: string }
+  | { kind: 'override'; node: string }
+  | { kind: 'action'; action: ActionKind; node?: string; outcome: ActionOutcome; apSpent: number; reason?: string }
+  | { kind: 'containment-declaration'; confirmed: boolean }
+  | { kind: 'review-filed' };
+```
+
+`toPresentationView()` sets `observed` from built-in EDR, reveal, patched or encrypted public state. It keeps hidden infection represented as visible clean. `projectTurnEvents()` never includes `roll`.
+
+Export the action catalogue from `actions.ts`. `deriveActionConsequences()` returns only visible consequences: AP cost, cut link count, pressure per hour, impact per hour, backup cost and known encryption urgency. Unknown nodes say status is uncertain. Replace positional inspector arguments with `NodeInspectionModel`.
+
+- [ ] **Step 4: Verify the security boundary and objective model**
+
+Run: `npm.cmd test -- src/sim/telemetry.test.ts src/ui/situation.test.ts src/sim/fog.test.ts src/sim/forecast.test.ts`
+
+Perform a source scan: `rg -n "toTrueView|\.state === 'infected'" src/ui src/render`
+
+Expected: no normal presentation module reads true infection. The existing debug module is the only permitted exception and is gated in Task 9.
+
+- [ ] **Step 5: Run static checks and commit**
+
+Run `npm.cmd run typecheck`, then `npm.cmd run lint`.
+
+Commit: `feat: project fog-safe incident telemetry`
+
+### Task 6: Handover, situation console, timeline, forecast routes and live roster
+
+**Files:**
+- Create: `src/ui/handover.ts`
+- Create: `src/ui/timeline.ts`
+- Create: `src/ui/timeline.test.ts`
+- Create: `src/render/forecast-routes.ts`
+- Create: `src/ui/incident-command.css`
+- Modify: `src/data/scenarios.ts`
+- Modify: `src/data/scenarios.test.ts`
+- Modify: `src/data/settings.ts`
+- Modify: `src/data/settings.test.ts`
+- Modify: `src/ui/hud.ts`
+- Modify: `src/ui/roster.ts`
+- Modify: `src/ui/actions.ts`
+- Modify: `src/ui/overlay.ts`
+- Modify: `index.html`
+- Modify: `src/main.ts`
+
+**Interfaces:**
+- Consumes: `PresentationView`, observable events and situation derivations from Task 5.
+- Produces: `createHandover()`, pure `createTimelineModel()`, DOM `createTimeline()`, `ForecastRouteLayer`, live `Roster.render(view)`, action previews and the DOM containers required by later theatre and layout tasks.
+- Handover gesture: the run-page `Accept handover` button calls audio unlock and begins the pager in the same document.
+
+- [ ] **Step 1: Add failing pure timeline, settings and scenario tests**
+
+```ts
+test('keeps the latest eight observed entries in chronological order', () => {
+  const model = createTimelineModel();
+  for (let hour = 1; hour <= 10; hour += 1) model.append(entryAt(hour));
+  expect(model.entries.map((entry) => entry.turn)).toEqual([3, 4, 5, 6, 7, 8, 9, 10]);
+});
+
+test('summarises hidden activity once without a location', () => {
+  expect(summariseResolution([{ kind: 'telemetry-gap', attempts: 3 }]))
+    .toEqual('Telemetry gaps obscured 3 threat attempts.');
+});
+
+test('enables the fog-safe threat forecast for a new settings record', () => {
+  expect(loadSettings(emptyStorage).threatForecast).toBe(true);
+});
+```
+
+Add scenario assertions for a non-secret handover summary and first priorities. Existing stored `threatForecast: false` must remain false after migration.
+
+- [ ] **Step 2: Run focused tests and verify red**
+
+Run: `npm.cmd test -- src/ui/timeline.test.ts src/data/settings.test.ts src/data/scenarios.test.ts`
+
+Expected: FAIL because the timeline is missing and the forecast default is false.
+
+- [ ] **Step 3: Build the DOM modules and accessible contracts**
+
+Extend each `Scenario` with `handover: { alert: string; priorities: readonly [string, string] }`. Copy names only confirmed alerts and public response priorities. Coverage percentage, AP, backups and loss conditions are derived from topology and config at run time.
+
+`createHandover(container, callbacks)` exposes `show(model)` and `dismiss()`. It starts on a focused `Accept handover` button, then shows 03:12, observed alerts, monitored percentage, 2 AP, two backups and both loss conditions. Escape must not bypass the information; a visible Skip button may complete the staged presentation after acceptance.
+
+Use `TimelineEntry { turn: number; text: string }` and `TimelineModel { readonly entries: readonly TimelineEntry[]; append(entry: TimelineEntry): void }`. `createTimelineModel()` owns the eight-entry cap. `createTimeline(container)` renders those rows in a `role="log"`, `aria-live="polite"`, `aria-relevant="additions"` region and publishes one atomic phase summary per resolution.
+
+`ForecastRouteLayer` receives the full `Forecast`, builds canonical undirected cable keys and draws amber route overlays. It never consumes the secret scheduled attempts. `main.ts` must stop discarding `.edges`.
+
+Add live words and glyphs to roster buttons. Each `aria-label` includes label, role, visible state, isolation and coverage. Wire preview focus or hover through `ActionBar.onPreview` without spending AP.
+
+- [ ] **Step 4: Verify focused logic and browser DOM semantics**
+
+Run: `npm.cmd test -- src/ui/timeline.test.ts src/data/settings.test.ts src/data/scenarios.test.ts src/sim/forecast.test.ts`
+
+Run `npm.cmd run typecheck`, then `npm.cmd run lint`.
+
+In the browser, inspect that the handover button receives focus, forecast routes are amber, the log exposes the correct ARIA attributes and roster labels update after infection, patching and isolation.
+
+- [ ] **Step 5: Commit the incident command interface**
+
+Commit: `feat: add incident command guidance`
+
+### Task 7: Ordered turn-resolution director and main-loop integration
+
+**Files:**
+- Create: `src/render/turn-director.ts`
+- Create: `src/render/turn-director.test.ts`
+- Modify: `src/render/spread-animation.ts`
+- Modify: `src/main.ts`
+- Modify: `src/ui/hud.ts`
+- Modify: `src/ui/timeline.ts`
+- Modify: `src/audio/audio.ts`
+
+**Interfaces:**
+- Consumes: ordered `ObservableTurnEvent[]` from Task 5 and UI sinks from Task 6.
+- Produces: `TurnDirector.play()`, `tick()`, `skip()`, `interrupt()`, `isPlaying()` and exactly-once completion.
+- Duration: 1.4 seconds minimum, 4.5 seconds maximum, compressed proportionally when many events exist.
+
+- [ ] **Step 1: Write fake-clock director tests first**
+
+```ts
+test('emits observable beats in simulation order and completes once', () => {
+  const seen: string[] = [];
+  const director = createTurnDirector({
+    onBeat: (event) => seen.push(event.kind),
+    onComplete: () => seen.push('complete'),
+  });
+
+  director.play([attemptEvent, infectedEvent, encryptedEvent], { reducedMotion: false }, 0);
+  director.tick(10);
+
+  expect(seen).toEqual(['attempt', 'infected', 'encrypted', 'complete']);
+});
+
+test('skip applies completion once even when tick runs afterwards', () => {
+  let completions = 0;
+  const director = createTurnDirector({ onBeat: () => undefined, onComplete: () => completions += 1 });
+  director.play([attemptEvent], { reducedMotion: false }, 0);
+  director.skip();
+  director.tick(99);
+  expect(completions).toBe(1);
+});
+```
+
+Also cover empty resolutions, reduced-motion ordering, duration clamp, restart rejection, `interrupt()` and no duplicate callback after tab visibility loss.
+
+- [ ] **Step 2: Run the director tests and verify red**
+
+Run: `npm.cmd test -- src/render/turn-director.test.ts`
+
+Expected: FAIL because the director module does not exist.
+
+- [ ] **Step 3: Implement the director as a pure scheduler over injected sinks**
+
+Use:
+
+```ts
+export interface TurnDirectorOptions {
+  onBeat(event: ObservableTurnEvent, index: number): void;
+  onComplete(): void;
+}
+
+export interface TurnDirector {
+  play(events: readonly ObservableTurnEvent[], options: { reducedMotion: boolean }, nowSeconds: number): void;
+  tick(nowSeconds: number): void;
+  skip(): void;
+  interrupt(): void;
+  isPlaying(): boolean;
+}
+```
+
+Compute scheduled offsets once from the supplied start time. Reduced motion uses zero travel delay but preserves ordered state and text beats. Clamp total duration, mark finalisation before calling the callback, and make every exit path idempotent.
+
+- [ ] **Step 4: Replace diff-guessing in `main.ts`**
+
+On End Hour or failed declaration: capture before state, run the pure simulation, project events, lock inputs, record true events, send observable events to the director, and apply the final board state exactly once on completion or skip. The low-level spread trace receives the real projected source and target. Hidden gaps play a centred pulse and never call a positional effect.
+
+Successful player actions publish immediate action events, effect requests and timeline entries. The HUD button reads `RESOLVING` while locked and exposes a Skip control. `visibilitychange` calls `interrupt()` and settles safely.
+
+Update the headless verification hook so instant turns bypass theatre but still use the same simulation and recorder path.
+
+- [ ] **Step 5: Verify integration and commit**
+
+Run: `npm.cmd test -- src/render/turn-director.test.ts src/sim/telemetry.test.ts src/sim/game.test.ts`
+
+Run `npm.cmd run typecheck`, `npm.cmd run lint`, then `npm.cmd run build`.
+
+Browser check: normal, empty, skipped and background-tab resolutions all return input once, keep the console clean and end on the correct board.
+
+Commit: `feat: direct truthful threat resolution`
+
+### Task 8: Procedural state markers, forecast hierarchy and action effects
+
+**Files:**
+- Create: `src/render/state-markers.ts`
+- Create: `src/render/state-markers.test.ts`
+- Create: `src/render/action-effects.ts`
+- Modify: `src/render/board.ts`
+- Modify: `src/render/materials.ts`
+- Modify: `src/render/textures.ts`
+- Modify: `src/render/forecast-routes.ts`
+- Modify: `src/data/topology.ts`
+- Modify: `src/data/topology.json`
+- Modify: `src/data/topology-gen.ts`
+- Modify: `src/data/topology-gen.test.ts`
+- Modify: `src/main.ts`
+
+**Interfaces:**
+- Consumes: `NodePresentationState`, selection, observable events and topology.
+- Produces: `deriveMarkerState()`, `StateMarkerLayer`, `ActionEffectPool` and topology segment metadata for floor stencils.
+- Performance: chassis remain instanced. The 24-node marker and effect overlays are pooled small meshes or sprites.
+
+- [ ] **Step 1: Write marker and topology tests before Three.js construction**
+
+```ts
+test('unknown and infected marker states are derived without hidden truth', () => {
+  expect(deriveMarkerState(unobservedCleanPresentation)).toMatchObject({ unknown: true, infected: false });
+  expect(deriveMarkerState(observedInfectedPresentation)).toMatchObject({ unknown: false, infected: true });
+});
+
+test('encrypted state requests a displaced physical panel', () => {
+  expect(deriveMarkerState(observedEncryptedPresentation).panelDisplacement).toBeGreaterThan(0);
+});
+
+test('generated nodes retain a segment identifier', () => {
+  const topology = generateTopology('segment-proof');
+  expect(topology.nodes.every((node) => node.segment.length > 0)).toBe(true);
+});
+```
+
+Also cover selected brackets, labels, isolation, patched state and that unobserved hidden infection produces exactly the same marker state as unobserved clean.
+
+- [ ] **Step 2: Run focused tests and verify red**
+
+Run: `npm.cmd test -- src/render/state-markers.test.ts src/data/topology-gen.test.ts`
+
+Expected: FAIL because the marker module and retained segment field do not exist.
+
+- [ ] **Step 3: Implement the physical state language**
+
+`StateMarkerLayer` owns canvas-painted infection glyph plates, static unknown markers, encrypted hinged or displaced panels, selected corner brackets, a short DOM-safe label sprite and a local cyan light pool. It receives only presentation state. Reduced motion stops pulse travel but leaves plates and panel displacement visible.
+
+Lower healthy cable and EDR emissive energy below selection. Forecast overlays remain amber. Actual observable compromise traces remain magenta. Paint restrained floor-zone stencils from `TopologyNode.segment` with a procedural canvas map.
+
+`ActionEffectPool.play(action, nodeId)` supplies distinct pooled geometry for sensor ping, isolation cut, reconnection surge, patch checksum, restore boot and emergency authorisation. Its other public methods are `tick(nowSeconds)`, `setReducedMotion(enabled)` and `dispose()`. Cap repeated flashes below three per second and disable travel under reduced motion.
+
+- [ ] **Step 4: Integrate, verify static logic and measure frames**
+
+Run: `npm.cmd test -- src/render/state-markers.test.ts src/data/topology-gen.test.ts src/sim/telemetry.test.ts`
+
+Run `npm.cmd run typecheck`, `npm.cmd run lint`, then `npm.cmd run build`.
+
+Use the existing browser bench for 120 high-quality frames. Required: average below 3ms, worst below 8ms. Capture normal and greyscale states showing clean, unknown, infected, encrypted, patched, isolated and selected nodes without relying on colour.
+
+- [ ] **Step 5: Commit the procedural visual language**
+
+Commit: `feat: add procedural incident state language`
+
+### Task 9: Safe-area framing, responsive asset drawer and production debug boundary
+
+**Files:**
+- Create: `src/render/framing.ts`
+- Create: `src/render/framing.test.ts`
+- Create: `src/ui/layout.ts`
+- Modify: `src/render/scene.ts`
+- Modify: `src/render/picking.ts`
+- Modify: `src/main.ts`
+- Modify: `src/ui/roster.ts`
+- Modify: `src/ui/incident-command.css`
+- Modify: `src/ui/style.css`
+- Modify: `index.html`
+
+**Interfaces:**
+- Consumes: measured panel rectangles, topology bounds and text scale.
+- Produces: `computeSafeFrame()`, `fitCameraToSafeArea()`, `LayoutController`, non-modal roster drawer and gated debug availability.
+
+- [ ] **Step 1: Write framing and breakpoint tests first**
+
+```ts
+test('reserves both consoles when the centre remains usable', () => {
+  expect(computeSafeFrame({ width: 1600, height: 900 }, { left: 320, right: 210 }))
+    .toEqual({ x: 320, y: 0, width: 1070, height: 900, rosterMode: 'rail' });
+});
+
+test('collapses the roster when the playfield would fall below its minimum', () => {
+  expect(computeSafeFrame({ width: 1024, height: 768 }, { left: 360, right: 240 }).rosterMode)
+    .toBe('drawer');
+});
+```
+
+Cover zero-sized startup, device-pixel ratio independence, 150% and 200% panel width inputs, stable camera target and NDC conversion from the canvas rectangle rather than the window.
+
+- [ ] **Step 2: Run focused tests and verify red**
+
+Run: `npm.cmd test -- src/render/framing.test.ts`
+
+Expected: FAIL because safe-frame calculation does not exist.
+
+- [ ] **Step 3: Implement measured layout and picking**
+
+Mount the renderer into a dedicated playfield host. `ResizeObserver` measures command console, roster rail and playfield. Refit the camera when the viewport, text scale or roster mode changes. Convert pointer coordinates with `canvas.getBoundingClientRect()`.
+
+`LayoutController` exposes `start()`, `stop()`, `setRosterOpen(open)` and `currentFrame()`. It owns the observer and drawer state; renderer modules receive the current safe frame without querying DOM panels themselves.
+
+Below 1200 CSS pixels, or when the measured centre is below the minimum, use a non-modal roster drawer. Its trigger has `aria-controls` and `aria-expanded`; closed content is hidden and inert; Escape closes and restores trigger focus; Tab is not trapped. At 390px replace play with the explicit desktop-controls notice while retaining scenario menu and settings without horizontal overflow.
+
+Raise small faded metadata to at least `0.875rem` and WCAG AA contrast. Keep 200% text usable. At 400% reflow, verify the menu and notice retain all information without horizontal page scrolling.
+
+- [ ] **Step 4: Gate true-state debug and verify browser widths**
+
+Expose debug only when `import.meta.env.DEV || params.get('debug') === '1'`. Remove the production help copy and ignore the D hotkey otherwise.
+
+Run `npm.cmd run typecheck`, `npm.cmd run lint`, then `npm.cmd run build`.
+
+Browser captures: 1600x900 and 1024x768 at 100%, 150% and 200%; 390x844 notice; 400% reflow; high contrast; keyboard drawer open, close, Escape and focus return. Console must remain clean.
+
+- [ ] **Step 5: Commit responsive incident framing**
+
+Commit: `fix: frame the board around incident controls`
+
+### Task 10: Action audio, adaptive tension and full acceptance gate
+
+**Files:**
+- Modify: `src/audio/audio.ts`
+- Modify: `src/audio/audio.test.ts`
+- Modify: `src/audio/music.ts`
+- Modify: `src/audio/music.test.ts`
+- Modify: `src/audio/reverb.ts` only if routing requires it
+- Modify: `src/main.ts`
+- Modify: `src/ui/handover.ts`
+- Modify: `src/ui/settings-panel.ts`
+- Modify: `README.md`
+- Modify: `GAME_DESIGN.md` only for final measured evidence
+- Modify: `CREDITS.md` only if the audit finds an omission
+- Create: `docs/phase-8/` proof captures generated during browser verification
+
+**Interfaces:**
+- Consumes: action, declaration, recovery, observable threat and filing events from earlier tasks.
+- Produces: distinct sound keys, master compression, observable-risk score drive, same-document pager unlock and final-cadence filing behaviour.
+
+- [ ] **Step 1: Write audio registry and state-transition tests first**
+
+```ts
+test.each([
+  'handover', 'scan', 'isolate', 'reconnect', 'patch', 'restore',
+  'emergency', 'declaration', 'declaration-failed', 'attempt-hidden', 'review-filed',
+] as const)('registers %s and remains safe before audio unlock', (name) => {
+  expect(SOUND_NAMES).toContain(name);
+  expect(() => createAudio().play(name)).not.toThrow();
+});
+
+test('recovery releases tension but does not resolve the score', () => {
+  const model = deriveMusicState(observableRecoveryInput);
+  expect(model.phase).toBe('recovery');
+  expect(model.finalCadence).toBe(false);
+});
+
+test('filing the review requests the successful final cadence', () => {
+  expect(deriveMusicState(observableFiledInput).finalCadence).toBe(true);
+});
+```
+
+Cover initial intensity being applied immediately after unlock, hidden attempt centring, no positional node argument for `attempt-hidden`, safe no-op when AudioContext is unavailable, separate music/effects volume and compressor routing.
+
+- [ ] **Step 2: Run audio tests and verify red**
+
+Run: `npm.cmd test -- src/audio/audio.test.ts src/audio/music.test.ts`
+
+Expected: FAIL because the new sound keys, phase model and compressor path do not exist.
+
+- [ ] **Step 3: Implement distinct procedural signatures and mix protection**
+
+Add the spec's signatures using oscillators, filtered noise, envelopes and the existing reverb. Route all effect and score buses through a master `DynamicsCompressorNode` before destination. Aggregate hidden attempts into one centred pulse whose density reflects count without revealing location.
+
+Drive score intensity only from observable blast radius, visible encryption urgency, pressure and incident phase. Push the current intensity when `unlock()` succeeds. Recovery removes the most aggressive layers without cadence. Loss holds unresolved. `review-filed` triggers the successful cadence.
+
+The run-page `Accept handover` handler calls `audio.unlock()` and then `audio.play('handover')` in the same document and gesture. Audio failure must not prevent the handover from advancing.
+
+- [ ] **Step 4: Run the full automated gate from a clean process**
+
+Run these commands separately and retain their complete outputs in the task report:
+
+1. `npm.cmd test`
+2. `npm.cmd run typecheck`
+3. `npm.cmd run lint`
+4. `npm.cmd run build`
+5. `npm.cmd run pacing`
+6. `npm.cmd run gen`
+7. `npm.cmd audit --audit-level=high`
+
+Required: zero test, type, lint or build failures; all balance bands pass over 4,000 seeds; no high or critical production dependency finding. The existing Vite chunk warning is recorded, not misreported as a failure.
+
+- [ ] **Step 5: Run the real browser and playtest gate**
+
+Verify fresh first run, returning run, loss, false declaration, successful declaration, immediate filing, multi-hour recovery and abandoned run. Complete mouse and keyboard journeys. Inspect 1600x900, 1024x768, 150%, 200%, 400% reflow, high contrast, reduced motion, greyscale and all quality tiers. Confirm normal, skipped and tab-interrupted theatre. Run the 120-frame bench and keep a clean console.
+
+Perform one headphone pass: action identity, pager gesture, hidden-attempt privacy, compressor headroom, score escalation, recovery release, loss hold and filed-PIR cadence. Perform at least three timed human runs, including one first-time observer, and record whether 12 to 18 minutes and guidance comprehension are met. If no independent human or audible output is available in the environment, record that exact manual gate as unverified and do not claim it passed; complete every automated and browser-observable part first.
+
+- [ ] **Step 6: Update proof, self-review and commit**
+
+Add Phase 8 screenshots and measured results to README and `GAME_DESIGN.md`. Audit `CREDITS.md`; do not add an entry when no new third-party asset or font was added. Scan changed prose and UI copy for em dashes and US spelling.
+
+Run the full automated gate again after documentation changes.
+
+Commit: `feat: complete incident command audio and acceptance`
+
+### Task 99: End of executable plan
+</script>
+
+<script>
+(() => {
+  const source = document.getElementById('plan-source').textContent || '';
+  const output = document.getElementById('rendered-plan');
+  const index = document.getElementById('task-index');
+  const escapeHtml = (value) => value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+  const inline = (value) => escapeHtml(value)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+  let html = '';
+  let paragraph = [];
+  let list = null;
+  let code = false;
+  let codeLines = [];
+  const flushParagraph = () => {
+    if (paragraph.length) html += `<p>${inline(paragraph.join(' '))}</p>`;
+    paragraph = [];
+  };
+  const closeList = () => {
+    if (list) html += `</${list}>`;
+    list = null;
+  };
+  const flushCode = () => {
+    html += `<pre><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`;
+    codeLines = [];
+  };
+
+  for (const line of source.split(/\r?\n/)) {
+    if (line.startsWith('### Task 99:')) break;
+    if (line.startsWith('```')) {
+      flushParagraph();
+      closeList();
+      if (code) flushCode();
+      code = !code;
+      continue;
+    }
+    if (code) {
+      codeLines.push(line);
+      continue;
+    }
+    if (!line.trim()) {
+      flushParagraph();
+      closeList();
+      continue;
+    }
+    const heading = line.match(/^(#{1,4})\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      closeList();
+      const level = Math.min(4, heading[1].length);
+      const title = heading[2];
+      const task = title.match(/^Task (\d+):\s+(.+)$/);
+      const id = task ? `task-${task[1]}` : '';
+      html += `<h${level}${id ? ` id="${id}"` : ''}>${inline(title)}</h${level}>`;
+      if (task) index.insertAdjacentHTML('beforeend', `<a href="#${id}">${task[1]}. ${escapeHtml(task[2])}</a>`);
+      continue;
+    }
+    if (line.startsWith('> ')) {
+      flushParagraph();
+      closeList();
+      html += `<blockquote>${inline(line.slice(2))}</blockquote>`;
+      continue;
+    }
+    const checklist = line.match(/^- \[ \] (.+)$/);
+    const bullet = line.match(/^- (.+)$/);
+    const numbered = line.match(/^\d+\. (.+)$/);
+    if (checklist || bullet || numbered) {
+      flushParagraph();
+      const nextList = numbered ? 'ol' : 'ul';
+      if (list !== nextList) {
+        closeList();
+        list = nextList;
+        html += `<${list}>`;
+      }
+      const body = checklist?.[1] || bullet?.[1] || numbered?.[1] || '';
+      html += `<li${checklist ? ' class="check"' : ''}>${inline(body)}</li>`;
+      continue;
+    }
+    if (line === '---') {
+      flushParagraph();
+      closeList();
+      html += '<hr>';
+      continue;
+    }
+    paragraph.push(line.trim());
+  }
+  flushParagraph();
+  closeList();
+  output.innerHTML = html;
+})();
+</script>
+</body>
+</html>
