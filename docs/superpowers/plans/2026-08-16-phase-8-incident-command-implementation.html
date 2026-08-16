@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
 <title>Patch Tuesday Phase 8 Implementation Plan</title>
 <style>
   :root {
@@ -173,13 +174,17 @@ import { makeGameState, makeTopology } from './fixtures';
 import { scheduleSpreadAttempts } from './pacing';
 
 test('schedules at most one uniformly selected target per source', () => {
-  const topology = makeTopology([
-    ['SRC-A', ['A-1', 'A-2']],
-    ['SRC-B', ['B-1', 'B-2']],
-  ]);
-  const state = makeGameState(topology, {
+  const topology = makeTopology(
+    [{ id: 'SRC-A' }, { id: 'A-1' }, { id: 'A-2' }, { id: 'SRC-B' }, { id: 'B-1' }, { id: 'B-2' }],
+    [['SRC-A', 'A-1'], ['SRC-A', 'A-2'], ['SRC-B', 'B-1'], ['SRC-B', 'B-2']],
+  );
+  const state = makeGameState({
     'SRC-A': { state: 'infected', infectedTurns: 0 },
+    'A-1': { state: 'clean', infectedTurns: 0 },
+    'A-2': { state: 'clean', infectedTurns: 0 },
     'SRC-B': { state: 'infected', infectedTurns: 0 },
+    'B-1': { state: 'clean', infectedTurns: 0 },
+    'B-2': { state: 'clean', infectedTurns: 0 },
   });
 
   const result = scheduleSpreadAttempts(state, topology, createRng(1234), 4);
@@ -258,6 +263,9 @@ Commit only the files in this task with: `feat: schedule capped threat attempts`
 - Modify: `src/sim/game.ts`
 - Modify: `src/sim/game.test.ts`
 - Modify: `src/sim/fog.test.ts`
+- Modify: `src/sim/pir.ts` for the mechanical action-event field migration only
+- Modify: `src/sim/pir.test.ts` for the same field migration
+- Modify: `scripts/pir-demo.ts` for the same field migration
 
 **Interfaces:**
 - Consumes: scheduler-backed `stepTurn()` from Task 1.
@@ -270,7 +278,7 @@ Add tests for these literal transitions:
 
 ```ts
 test('a hidden foothold makes a containment declaration fail without localisation', () => {
-  const state = makeGameState(topology, {
+  const state = makeGameState({
     HIDDEN: { state: 'infected', infectedTurns: 0 },
   });
   state.ap = 1;
@@ -303,7 +311,7 @@ test('filing the review is the only successful terminal transition', () => {
 });
 ```
 
-Also cover: a visible infection blocks declaration without spending AP; normal actions are rejected outside their allowed phase; recovery allows only Reconnect and Restore; a recovery hour emits no spread or encryption event but accrues isolation pressure and impact; successful declaration does not accrue pressure or impact; false declaration records a High finding; loss still takes precedence; replay reproduces declaration, recovery and filing byte-for-byte; redundant sensor spends nothing; patch probe is accepted and recorded with `apSpent: 1`.
+Also cover: a visible infection blocks declaration without spending AP; normal actions are rejected outside their allowed phase; recovery allows only Reconnect and Restore; a recovery hour emits `recovery-hour`, no spread and no encryption event but accrues isolation pressure and impact; successful declaration does not accrue pressure or impact; false declaration records a High finding; loss still takes precedence; replay reproduces declaration, recovery and filing byte-for-byte; redundant sensor spends nothing; patch probe is accepted and recorded with `apSpent: 1`.
 
 - [ ] **Step 2: Run the lifecycle tests and verify they fail for missing behaviour**
 
@@ -333,6 +341,7 @@ export type TurnEvent =
   | { kind: 'override'; node: string }
   | { kind: 'action'; action: ActionKind; node?: string; outcome: ActionOutcome; apSpent: number; reason?: string }
   | { kind: 'containment-declaration'; confirmed: boolean }
+  | { kind: 'recovery-hour' }
   | { kind: 'review-filed' };
 ```
 
@@ -340,11 +349,13 @@ Add `phase: IncidentPhase` to `GameState` and initialise it to `active`. Expand 
 
 In `game.test.ts`, define `noSpreadConfig` as `{ ...SIM_CONFIG, spreadChance: 0, dwellTurns: 0 }`. State builders clone fixture nodes so each expectation starts from independent literal data.
 
+Replace `event.ok` consumers in `pir.ts`, `pir.test.ts` and `pir-demo.ts` with `event.outcome !== 'blocked'`. Do not change PIR chronology, rating or copy in this task; Task 4 owns those behaviours.
+
 - [ ] **Step 4: Implement phase-aware commands and hourly accounting**
 
 `canDeclareContainment()` uses `toVisibleView()` and returns true only in active play with zero visible infected nodes. `declareContainment()` checks that public gate, then checks true `infectedCount()`. Failure records the finding and calls the normal active-hour resolver exactly once. Success clones state, discards unused AP, sets `phase: 'recovery'`, refreshes AP and does not call the threat or accounting step.
 
-Factor active and recovery accounting so recovery advances isolation age, pressure, overrides, AP, score and clock without calling `stepTurn()`. Restrict `applyStatus()` to losses. `fileReview()` accepts only playing recovery state, emits `review-filed` and sets `status: 'won'`.
+Factor active and recovery accounting so recovery advances isolation age, pressure, overrides, AP, score and clock without calling `stepTurn()`. A recovery advance emits `recovery-hour` before its public accounting events. Restrict `applyStatus()` to losses. `fileReview()` accepts only playing recovery state, emits `review-filed` and sets `status: 'won'`.
 
 Update replay dispatch for all three command kinds.
 
@@ -501,7 +512,7 @@ Commit: `feat: lock phase 8 incident pacing`
 
 **Interfaces:**
 - Consumes: explicit action outcomes, declaration and review events from Task 2.
-- Produces: chronological coverage-gap findings, declaration/recovery findings, `Impact`, containment and filing metrics, and the Phase 8 `ratingOf()` rules.
+- Produces: chronological coverage-gap findings, declaration/recovery findings, `Impact`, containment and filing metrics, and `ratingOf(record, topology)` for Phase 8 rules.
 
 - [ ] **Step 1: Write chronology and rating regressions first**
 
@@ -525,7 +536,7 @@ test('premature declaration caps an otherwise near miss at contained', () => {
     log: [declarationFailed(3), declarationConfirmed(6), reviewFiled(6)],
   });
 
-  expect(ratingOf(record)).toBe('CONTAINED');
+  expect(ratingOf(record, topology)).toBe('CONTAINED');
 });
 ```
 
@@ -541,7 +552,7 @@ Expected: the chronology regression fails because current code checks final reve
 
 Seed a `Set<string>` with built-in EDR nodes. Walk `RunRecord.log` in order. Before evaluating each successful spread, use the set as it existed at that timestamp. Add a node after an applied sensor or accepted patch probe. Store first gap time and count per source.
 
-Implement the exact rating order:
+Change the signature to `ratingOf(record: RunRecord, topology: Topology): Rating` so isolated node IDs can be classified as router, server, backup, Domain Controller or workstation. `buildPir()` passes its topology argument through. Implement the exact rating order:
 
 ```ts
 if (record.final.status === 'lost') return 'TOTAL LOSS';
@@ -644,6 +655,7 @@ export type ObservableTurnEvent =
   | { kind: 'override'; node: string }
   | { kind: 'action'; action: ActionKind; node?: string; outcome: ActionOutcome; apSpent: number; reason?: string }
   | { kind: 'containment-declaration'; confirmed: boolean }
+  | { kind: 'recovery-hour' }
   | { kind: 'review-filed' };
 ```
 
@@ -669,6 +681,9 @@ Commit: `feat: project fog-safe incident telemetry`
 
 **Files:**
 - Create: `src/ui/handover.ts`
+- Create: `src/ui/handover.test.ts`
+- Create: `src/ui/incident-controls.ts`
+- Create: `src/ui/incident-controls.test.ts`
 - Create: `src/ui/timeline.ts`
 - Create: `src/ui/timeline.test.ts`
 - Create: `src/render/forecast-routes.ts`
@@ -681,12 +696,14 @@ Commit: `feat: project fog-safe incident telemetry`
 - Modify: `src/ui/roster.ts`
 - Modify: `src/ui/actions.ts`
 - Modify: `src/ui/overlay.ts`
+- Modify: `src/audio/audio.ts`
+- Modify: `src/audio/audio.test.ts`
 - Modify: `index.html`
 - Modify: `src/main.ts`
 
 **Interfaces:**
 - Consumes: `PresentationView`, observable events and situation derivations from Task 5.
-- Produces: `createHandover()`, pure `createTimelineModel()`, DOM `createTimeline()`, `ForecastRouteLayer`, live `Roster.render(view)`, action previews and the DOM containers required by later theatre and layout tasks.
+- Produces: motion-aware `createHandover()`, `createIncidentControls()`, `createSituationPanel()`, pure `createTimelineModel()`, DOM `createTimeline()`, `ForecastRouteLayer`, live `Roster.render(view)`, action previews and the DOM containers required by later theatre and layout tasks.
 - Handover gesture: the run-page `Accept handover` button calls audio unlock and begins the pager in the same document.
 
 - [ ] **Step 1: Add failing pure timeline, settings and scenario tests**
@@ -704,15 +721,17 @@ test('summarises hidden activity once without a location', () => {
 });
 
 test('enables the fog-safe threat forecast for a new settings record', () => {
-  expect(loadSettings(emptyStorage).threatForecast).toBe(true);
+  expect(loadSettings().threatForecast).toBe(true);
 });
 ```
 
-Add scenario assertions for a non-secret handover summary and first priorities. Existing stored `threatForecast: false` must remain false after migration.
+Add scenario assertions for a non-secret handover summary and first priorities. Test an existing stored `threatForecast: false` by stubbing global `localStorage`, calling `vi.resetModules()` and importing `settings.ts` fresh, matching the suite's existing reduced-motion fresh-import pattern. Do not add a storage parameter to production `loadSettings()`.
+
+Add incident-control model tests for these literal modes: active with visible infection shows End Hour only; active with a clear visible estate enables Declare Containment; recovery shows Advance Recovery Hour and File Review; resolving disables phase commands and exposes Skip. Add a reduced-motion handover test proving every line is present immediately and no staged step is scheduled. Add a timeline test for the `recovery-hour` summary. Extend `SOUND_NAMES` with `handover` and prove it remains safe before unlock; Task 6 adds the basic pager cue, while Task 10 refines its mix.
 
 - [ ] **Step 2: Run focused tests and verify red**
 
-Run: `npm.cmd test -- src/ui/timeline.test.ts src/data/settings.test.ts src/data/scenarios.test.ts`
+Run: `npm.cmd test -- src/ui/handover.test.ts src/ui/incident-controls.test.ts src/ui/timeline.test.ts src/data/settings.test.ts src/data/scenarios.test.ts src/audio/audio.test.ts`
 
 Expected: FAIL because the timeline is missing and the forecast default is false.
 
@@ -720,9 +739,15 @@ Expected: FAIL because the timeline is missing and the forecast default is false
 
 Extend each `Scenario` with `handover: { alert: string; priorities: readonly [string, string] }`. Copy names only confirmed alerts and public response priorities. Coverage percentage, AP, backups and loss conditions are derived from topology and config at run time.
 
-`createHandover(container, callbacks)` exposes `show(model)` and `dismiss()`. It starts on a focused `Accept handover` button, then shows 03:12, observed alerts, monitored percentage, 2 AP, two backups and both loss conditions. Escape must not bypass the information; a visible Skip button may complete the staged presentation after acceptance.
+`createHandover(container, callbacks)` exposes `show(model, { reducedMotion })` and `dismiss()`. It starts on a focused `Accept handover` button, then shows 03:12, observed alerts, monitored percentage, 2 AP, two backups and both loss conditions. Escape must not bypass the information; a visible Skip button may complete the staged presentation after acceptance. Reduced motion renders the complete copy immediately after acceptance with no staged text or camera request.
 
-Use `TimelineEntry { turn: number; text: string }` and `TimelineModel { readonly entries: readonly TimelineEntry[]; append(entry: TimelineEntry): void }`. `createTimelineModel()` owns the eight-entry cap. `createTimeline(container)` renders those rows in a `role="log"`, `aria-live="polite"`, `aria-relevant="additions"` region and publishes one atomic phase summary per resolution.
+Register a short synthesised `handover` pager in `audio.ts` using the existing oscillator and envelope path. The Accept callback calls `audio.unlock()` and `audio.play('handover')` synchronously in the same gesture. Keep the cue functional and conservative here; Task 10 owns the final phone layer, compressor routing and headphone mix.
+
+`createIncidentControls(container, callbacks)` renders real DOM buttons from a pure `deriveIncidentControls(state, canDeclare, resolving)` model. Active response exposes End Hour and conditionally Declare Containment. Recovery exposes Advance Recovery Hour and File Review. Resolving exposes Skip and disables phase commands. `main.ts` dispatches each button to `endTurn()`, `declareContainment()` or `fileReview()` and moves focus to the new primary command after a phase change. Enter activates End or Advance; C declares when available; F files in recovery. Hotkeys never fire from an input or while resolution is locked.
+
+`createSituationPanel(container)` exposes `render(model)`. It renders incident phase, objective, observed threat summary and grouped AP, backups, Impact and pressure, with seed and FPS in secondary diagnostics. `main.ts` refreshes it after every action, phase event, setting change and resolution completion.
+
+Use `TimelineEntry { turn: number; text: string }` and `TimelineModel { readonly entries: readonly TimelineEntry[]; append(entry: TimelineEntry): void }`. `createTimelineModel()` owns the eight-entry cap. `createTimeline(container)` renders those rows in a `role="log"`, `aria-live="polite"`, `aria-relevant="additions"` region and publishes one atomic phase summary per resolution. `recovery-hour` becomes `Recovery advanced to T+NNh; operational costs updated.` without hidden-threat wording.
 
 `ForecastRouteLayer` receives the full `Forecast`, builds canonical undirected cable keys and draws amber route overlays. It never consumes the secret scheduled attempts. `main.ts` must stop discarding `.edges`.
 
@@ -730,11 +755,11 @@ Add live words and glyphs to roster buttons. Each `aria-label` includes label, r
 
 - [ ] **Step 4: Verify focused logic and browser DOM semantics**
 
-Run: `npm.cmd test -- src/ui/timeline.test.ts src/data/settings.test.ts src/data/scenarios.test.ts src/sim/forecast.test.ts`
+Run: `npm.cmd test -- src/ui/handover.test.ts src/ui/incident-controls.test.ts src/ui/timeline.test.ts src/data/settings.test.ts src/data/scenarios.test.ts src/sim/forecast.test.ts src/audio/audio.test.ts`
 
 Run `npm.cmd run typecheck`, then `npm.cmd run lint`.
 
-In the browser, inspect that the handover button receives focus, forecast routes are amber, the log exposes the correct ARIA attributes and roster labels update after infection, patching and isolation.
+In the browser, inspect that the handover button receives focus, reduced motion shows complete handover copy immediately, lifecycle buttons and hotkeys dispatch the correct command, focus follows the phase change, the situation panel refreshes, forecast routes are amber, the log exposes the correct ARIA attributes and roster labels update after infection, patching and isolation.
 
 - [ ] **Step 5: Commit the incident command interface**
 
@@ -752,7 +777,7 @@ Commit: `feat: add incident command guidance`
 - Modify: `src/audio/audio.ts`
 
 **Interfaces:**
-- Consumes: ordered `ObservableTurnEvent[]` from Task 5 and UI sinks from Task 6.
+- Consumes: ordered `ObservableTurnEvent[]` plus before and after `PresentationView` from Task 5, and UI sinks from Task 6.
 - Produces: `TurnDirector.play()`, `tick()`, `skip()`, `interrupt()`, `isPlaying()` and exactly-once completion.
 - Duration: 1.4 seconds minimum, 4.5 seconds maximum, compressed proportionally when many events exist.
 
@@ -762,27 +787,42 @@ Commit: `feat: add incident command guidance`
 test('emits observable beats in simulation order and completes once', () => {
   const seen: string[] = [];
   const director = createTurnDirector({
+    onAnalysis: () => seen.push('analysis'),
     onBeat: (event) => seen.push(event.kind),
+    onSettle: () => seen.push('settle'),
     onComplete: () => seen.push('complete'),
   });
 
-  director.play([attemptEvent, infectedEvent, encryptedEvent], { reducedMotion: false }, 0);
+  director.play(
+    { before: beforeView, after: afterView, events: [attemptEvent, infectedEvent, encryptedEvent] },
+    { reducedMotion: false },
+    0,
+  );
   director.tick(10);
 
-  expect(seen).toEqual(['attempt', 'infected', 'encrypted', 'complete']);
+  expect(seen).toEqual(['analysis', 'attempt', 'infected', 'encrypted', 'settle', 'complete']);
 });
 
 test('skip applies completion once even when tick runs afterwards', () => {
   let completions = 0;
-  const director = createTurnDirector({ onBeat: () => undefined, onComplete: () => completions += 1 });
-  director.play([attemptEvent], { reducedMotion: false }, 0);
+  let settles = 0;
+  let settledEvents: readonly ObservableTurnEvent[] = [];
+  const director = createTurnDirector({
+    onAnalysis: () => undefined,
+    onBeat: () => undefined,
+    onSettle: (_view, events) => { settles += 1; settledEvents = events; },
+    onComplete: () => completions += 1,
+  });
+  director.play({ before: beforeView, after: afterView, events: [attemptEvent] }, { reducedMotion: false }, 0);
   director.skip();
   director.tick(99);
   expect(completions).toBe(1);
+  expect(settles).toBe(1);
+  expect(settledEvents).toEqual([attemptEvent]);
 });
 ```
 
-Also cover empty resolutions, reduced-motion ordering, duration clamp, restart rejection, `interrupt()` and no duplicate callback after tab visibility loss.
+Also cover empty resolutions, analysis pulse first, visible infection and encryption landing from the after view at their event positions, reduced-motion ordering, duration clamp, restart rejection, `interrupt()` and no duplicate settle or completion after tab visibility loss.
 
 - [ ] **Step 2: Run the director tests and verify red**
 
@@ -795,13 +835,21 @@ Expected: FAIL because the director module does not exist.
 Use:
 
 ```ts
+export interface TurnResolutionView {
+  before: PresentationView;
+  after: PresentationView;
+  events: readonly ObservableTurnEvent[];
+}
+
 export interface TurnDirectorOptions {
-  onBeat(event: ObservableTurnEvent, index: number): void;
+  onAnalysis(view: PresentationView): void;
+  onBeat(event: ObservableTurnEvent, index: number, view: PresentationView): void;
+  onSettle(view: PresentationView, events: readonly ObservableTurnEvent[]): void;
   onComplete(): void;
 }
 
 export interface TurnDirector {
-  play(events: readonly ObservableTurnEvent[], options: { reducedMotion: boolean }, nowSeconds: number): void;
+  play(resolution: TurnResolutionView, options: { reducedMotion: boolean }, nowSeconds: number): void;
   tick(nowSeconds: number): void;
   skip(): void;
   interrupt(): void;
@@ -809,11 +857,11 @@ export interface TurnDirector {
 }
 ```
 
-Compute scheduled offsets once from the supplied start time. Reduced motion uses zero travel delay but preserves ordered state and text beats. Clamp total duration, mark finalisation before calling the callback, and make every exit path idempotent.
+Compute scheduled offsets once from the supplied start time. The first beat is an analysis pulse over the before view. For visible infection, encryption and override beats, derive a new presentation snapshot by applying that node's public fields from the after view before calling `onBeat`. Reduced motion uses zero travel delay but preserves ordered state and text beats. Normal completion, skip and interrupt call `onSettle(after, originalEvents)` exactly once, then `onComplete()` exactly once. Clamp total duration and mark finalisation before invoking either callback.
 
 - [ ] **Step 4: Replace diff-guessing in `main.ts`**
 
-On End Hour or failed declaration: capture before state, run the pure simulation, project events, lock inputs, record true events, send observable events to the director, and apply the final board state exactly once on completion or skip. The low-level spread trace receives the real projected source and target. Hidden gaps play a centred pulse and never call a positional effect.
+On End Hour, Advance Recovery Hour or failed declaration: capture before presentation state, run the pure simulation, derive after presentation state, project events, lock inputs, record true events and send the whole resolution to the director. Render each staged public snapshot from `onBeat`, then the complete after view from `onSettle`. Append the full original observable event batch to the timeline inside that exactly-once settle callback, so normal, skip and interrupt retain identical history. The low-level spread trace receives the real projected source and target. Hidden gaps play a centred pulse and never call a positional effect.
 
 Successful player actions publish immediate action events, effect requests and timeline entries. The HUD button reads `RESOLVING` while locked and exposes a Skip control. `visibilitychange` calls `interrupt()` and settles safely.
 
@@ -882,7 +930,7 @@ Expected: FAIL because the marker module and retained segment field do not exist
 
 Lower healthy cable and EDR emissive energy below selection. Forecast overlays remain amber. Actual observable compromise traces remain magenta. Paint restrained floor-zone stencils from `TopologyNode.segment` with a procedural canvas map.
 
-`ActionEffectPool.play(action, nodeId)` supplies distinct pooled geometry for sensor ping, isolation cut, reconnection surge, patch checksum, restore boot and emergency authorisation. Its other public methods are `tick(nowSeconds)`, `setReducedMotion(enabled)` and `dispose()`. Cap repeated flashes below three per second and disable travel under reduced motion.
+`ActionEffectPool.play(action, nodeId?)` supplies distinct pooled geometry for sensor ping, isolation cut, reconnection surge, patch checksum, restore boot and emergency authorisation. Node-targeted actions require the node ID; Emergency budget omits it and plays a board-centred authorisation effect. Its other public methods are `tick(nowSeconds)`, `setReducedMotion(enabled)` and `dispose()`. Cap repeated flashes below three per second and disable travel under reduced motion.
 
 - [ ] **Step 4: Integrate, verify static logic and measure frames**
 
@@ -948,7 +996,7 @@ Raise small faded metadata to at least `0.875rem` and WCAG AA contrast. Keep 200
 
 - [ ] **Step 4: Gate true-state debug and verify browser widths**
 
-Expose debug only when `import.meta.env.DEV || params.get('debug') === '1'`. Remove the production help copy and ignore the D hotkey otherwise.
+Expose debug only when `import.meta.env.DEV || params.get('debug') === '1'`. Remove the production help copy and ignore the D hotkey otherwise. Apply the same gate to the full `window.__sim` and `window.__spikeBench` headless objects because they expose true state and instant mutation. Browser verification that needs them must use an explicit development URL or `?debug=1`; a normal production URL must define neither object.
 
 Run `npm.cmd run typecheck`, `npm.cmd run lint`, then `npm.cmd run build`.
 
