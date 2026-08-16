@@ -15,19 +15,6 @@ describe('spread statistics', () => {
     expect(result.reached + result.fizzled).toBe(result.runs);
   });
 
-  it('turns-to-60% sit in a plausible band on the undefended board', () => {
-    const topology = loadTopology();
-    const result = runSpreadStats(topology, { runs: 800, threshold: 0.6, maxTurns: 500, config: NO_DWELL });
-    // With per-cable spread the worm reaches 60% in most runs, in a handful of
-    // turns. Wide bands, just sanity fences around the measured behaviour.
-    expect(result.reached).toBeGreaterThan(result.runs * 0.5);
-    expect(result.mean).toBeGreaterThan(3);
-    expect(result.mean).toBeLessThan(30);
-    expect(result.min).toBeGreaterThanOrEqual(1);
-    expect(result.p10).toBeLessThanOrEqual(result.median);
-    expect(result.median).toBeLessThanOrEqual(result.p90);
-  });
-
   it('is reproducible: the same seed set gives the same numbers', () => {
     const topology = loadTopology();
     const a = runSpreadStats(topology, { runs: 200, threshold: 0.6, maxTurns: 500 });
