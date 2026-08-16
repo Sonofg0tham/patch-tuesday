@@ -1,7 +1,19 @@
 # Patch Tuesday - Game Design Document
 
-v0.1 - owner: Craig McCart (Sonofg0tham)
+v0.2 - owner: Craig McCart (Sonofg0tham)
 Status: pre-production. Numbers are starting values, all tunable via data files.
+
+## Phase 8 amendment - Incident Command
+
+Approved by Craig on 16 August 2026. This amendment reopens the Phase 3.10 pacing lock and the original win condition because measured runs finish around T+05h, before business pressure, recovery and the adaptive score mature. It supersedes only the conflicting rules named below.
+
+- **Run target:** 12 to 18 human minutes and typically 8 to 12 decision hours. Bot turns are a repeatable balance proxy, not a claim about wall time.
+- **Threat scheduler:** each infected source contributes at most one uniformly selected eligible target per hour. Seeded candidate order is shuffled and a global cap, initially four, limits attempts. Dwell, cap and chance are relocked only after the Phase 8 sweep passes its published bands.
+- **Containment:** clearing visible infection does not auto-win. When no infection is visible, the player may declare containment. A false declaration discards unused AP, records a High finding and resolves the normal active-response hour without revealing hidden locations. A true declaration enters recovery immediately with fresh AP and no extra threat or cost step.
+- **Recovery:** no spread or infection ageing. Reconnect and Restore remain available. Advancing a recovery hour still resolves isolation ageing, downtime score, pressure and pressure-driven overrides. Filing the PIR ends a successful run immediately. Critical services left isolated create a finding and cap the rating at CONTAINED.
+- **Forecast:** on by default, still fog-safe and optional in settings. Forecast risk uses amber. Magenta remains exclusive to observable compromise.
+- **Audio verdict:** recovery releases tension, but the final musical cadence belongs to filing the PIR.
+- **Unchanged locks:** AP, backup credits, action costs, loss conditions, node values, pressure values, topology constraints and the zero-asset rule remain locked unless the measured sweep proves a named dependency cannot pass.
 
 ## Pitch
 
@@ -16,7 +28,7 @@ It's 03:12 on a Wednesday and the on-call phone is screaming. Ransomware is loos
 
 ## Core loop
 
-Per turn (about 45-60 seconds of thought): read the board, spend up to 2 Action Points, end turn, watch the threat spread and events fire, reassess. Per run: first detection, containment fight, eradication, recovery, PIR. Target run length 15-20 minutes, roughly 20-30 turns.
+Per turn (about 60-90 seconds of thought): read the board, spend up to 2 Action Points, end the hour, watch the threat resolve and events fire, reassess. Per run: first detection, containment fight, eradication, declaration, recovery, PIR. Target run length 12-18 minutes, typically 8-12 decision hours.
 
 ## The board
 
@@ -33,7 +45,7 @@ v1 ships the hand-authored topology (the MERIDIAN MUTUAL scenario, defined in JS
 ## The threat (v1: the WORM)
 
 - Patient zero appears at a random edge workstation, then the worm dwells: it spreads unopposed for a few turns (dwellTurns, default 3, in sim config) before the incident is detected. The player is paged to an established foothold at T+01h, not a lone patient zero. (Added in Phase 3.5 as a structural difficulty lever: a single patient zero was trivially found and cured, so a competent player never lost. Locked at 3 in Phase 3.10, the value that put the greedy reference bot inside the 40-70 percent target band, see the v1 economy baseline below.)
-- Each INFECTED node makes one spread attempt per turn against each clean neighbour along a live cable: 60 percent base chance to infect each. (Revised in Phase 2 from a single random-cable attempt, which measured at a 100 percent fizzle rate on the v1 topology because high-degree junctions diluted their three attempts. Per-cable spread reaches 60 percent encryption in about 86 percent of undefended runs, mean 7.8 turns.)
+- Each INFECTED, non-isolated source contributes at most one attempt per hour. Its eligible clean, non-isolated neighbours are sorted, one target is selected uniformly through the seeded RNG, source-target candidates are shuffled through the same RNG, and the global cap is applied before each selected attempt rolls its spread chance. This Phase 8 scheduler prevents hubs from multiplying the number of attempts while preserving their routing options and deterministic replay.
 - A node infected for 3 consecutive turns becomes ENCRYPTED: it stops spreading, but it is lost unless restored, and its value bleeds score every turn.
 - Detection: nodes with EDR coverage (about 60 percent of the board, marked visibly) reveal infection the turn it lands. Uncovered nodes show clean until scanned or until they encrypt. This is the fog of war.
 
@@ -48,9 +60,9 @@ Threat variants (STALKER, which routes toward the backup node; LOUDMOUTH, fast b
 - **Restore** (2 AP, consumes 1 backup credit of 2): return an infected or encrypted node to clean. Useless if the backup node is lost.
 - **Emergency budget** (once per run, free): the CISO grants +2 AP this turn. The PIR permanently records "emergency change control bypassed". Sometimes worth it. Always embarrassing.
 
-## v1 economy baseline (locked, Phase 3.10)
+## v1 economy baseline (Phase 3.10, partially reopened by Phase 8)
 
-These are the locked v1 tuning values. No further balance changes without a new decision. All live in `src/sim/config.ts`.
+These are the Phase 3.10 values. Craig's Phase 8 decision reopens only dwell, spread chance and the new global attempt cap, in that order, until the new pacing gate passes. All live in `src/sim/config.ts`.
 
 - **Foothold:** dwellTurns 3, spreadChance 0.6, encryptAfterTurns 3, lossBlastRadius 0.6.
 - **Economy:** apPerTurn 2, backupCredits 2, emergency +2 AP once per run. Action costs: deploy sensor / isolate / reconnect 1 AP, patch / restore 2 AP, failed-patch probe 1 AP.
@@ -58,11 +70,15 @@ These are the locked v1 tuning values. No further balance changes without a new 
 
 **Measured on the locked economy (4,000 games each, single v1 topology):** the greedy reference bot wins **67 percent** (inside the 40-70 percent target band), the random-legal bot (casual-play floor) wins **18 percent**, and an undefended board reaches 60 percent encryption in **87 percent** of runs, mean **4.9 player-turns** from detection.
 
-These numbers were reached through the measured 3.5-3.9 sequence, one lever at a time (dwell, sensors, business pressure, the AP cut, backup credits), each with its own before/after instrumentation. That sequence is the audit trail: the phase PRs record what each knob did and why, and why the run finally locked at dwell 3. Instrument, don't tune, from here.
+These numbers were reached through the measured 3.5-3.9 sequence, one lever at a time (dwell, sensors, business pressure, the AP cut, backup credits), each with its own before/after instrumentation. That sequence remains the audit trail. Phase 8 adds a second audit trail: sweep attempt caps three, four and five; then dwell two and three only if needed; then spread chance 0.55, 0.60 and 0.65 only if needed. Change one lever per pass and record the result.
+
+The Phase 8 lock must pass at least 4,000 seeds: greedy win 45-70 percent, random-legal win 15-30 percent, greedy average finish T+08h to T+12h, random average T+07h to T+11h, early finishes before T+06h below 15 percent, runs active after T+16h below 10 percent, undefended loss at least 80 percent, and 20-50 percent of greedy runs reaching 80 percent business pressure.
 
 ## Win, lose, and the clock
 
-- **Win**: no INFECTED nodes remain on the board (everything clean, patched, encrypted-and-accepted, or restored). Containment achieved.
+- **Containment declaration**: available only when no infection is visible. It costs no AP but discards unused AP and commits the hour. If hidden infection remains, record a High premature-declaration finding and resolve the normal active-response hour without localising the hidden threat. If no true infection remains, enter recovery immediately with fresh AP and no threat, pressure or downtime step.
+- **Recovery**: only Reconnect and Restore remain available. Advancing an hour cannot spread or age infection, but it still accrues isolation age, downtime score and pressure, including any pressure-driven business override. File the PIR at any time to win. Filing with an isolated router, server, backup node or Domain Controller records an unrecovered critical-service finding and caps the rating at CONTAINED.
+- **Win**: file the PIR after a successful containment declaration.
 - **Lose**: the Domain Controller is encrypted, or 60 percent of the board is encrypted.
 - The HUD clock runs T+01h, T+02h per turn. Time-to-contain feeds the PIR.
 
@@ -73,7 +89,7 @@ One page, Fira Code, generated from the actual run. The sibling of Tailgate's En
 - Metrics: time to detect, time to contain, blast radius (percent of estate encrypted), downtime hours from isolation, backup credits burned, whether emergency change control was bypassed.
 - Findings drawn from real events with in-fiction timestamps ("Finding: EDR coverage gap on FINANCE-02 allowed undetected lateral movement, T+04h. Severity: High").
 - Rating: **NEAR MISS** (no additional encryption after detection), **CONTAINED** (blast radius under 25 percent, crown jewels intact), **REPORTABLE INCIDENT** (blast radius 25-60 percent: the regulator hears about this), **TOTAL LOSS** (defeat).
-  - NEAR MISS was redefined in Phase 4. Dwell (3 turns) means a node can arrive already encrypted at T+01h, so "nothing encrypted, ever" is unreachable on some seeds through no fault of the player. You are judged on the response, not the inherited dwell, so NEAR MISS is now "no encryption after detection". A run can be a NEAR MISS with an inherited encrypted node on the board. CONTAINED / REPORTABLE / TOTAL LOSS are unchanged.
+  - NEAR MISS was redefined in Phase 4. Dwell (3 turns) means a node can arrive already encrypted at T+01h, so "nothing encrypted, ever" is unreachable on some seeds through no fault of the player. You are judged on the response, not the inherited dwell, so NEAR MISS is now "no encryption after detection, no premature declaration and no unrecovered critical service". A run can be a NEAR MISS with an inherited encrypted node on the board. A premature declaration or unrecovered critical-service finding caps the rating at CONTAINED. REPORTABLE and TOTAL LOSS are unchanged.
   - Time to detect is where the dwell is revealed to the player for the first time: "initial access preceded detection by 3 hours".
 - [ NEW INCIDENT ] resets cleanly. Best rating per named scenario and a short run history persist in localStorage.
 
@@ -126,13 +142,17 @@ Done when: a public URL and a repo that belongs on the CV next to Tailgate.
 
 Rendering: the board was flat `MeshStandardMaterial` with no tone mapping, no reflections and no post-processing, which is why it read as a prototype rather than a game. Now it runs ACES filmic tone mapping, a procedurally prefiltered environment map (`src/render/textures.ts` builds a small room and pushes it through `PMREMGenerator`, so metal finally has something to reflect), PBR maps painted in code from tileable value noise and a Sobel height-to-normal pass, and an `EffectComposer` chain of bloom plus one combined film pass (grade, chromatic aberration, vignette, static scanlines, grain) in `src/render/postfx.ts`. Node state now drives a per-instance emissive attribute rather than only a diffuse colour, so an infected chassis is a real light source that blooms and lights its neighbours; cables carry a travelling pulse that turns magenta and accelerates when the link is compromised. Every silhouette from Phase 1 is unchanged (the accessibility contract depends on them) but each now contains real hardware detail: bevels, vent banks, rack sleds, drive bays, the DC beacon. The zero-asset rule holds exactly: not one texture, model or audio file was added.
 
-Audio: `src/audio/music.ts` adds the score the design always called for, six layers on a four-chord loop in D natural minor that never resolves, each gated by how bad the incident is, so the music is a readout of the board rather than a bed under it. It ends on a verdict: the tritone holds unresolved on a loss, the suspended dominant finally lands on containment. `src/audio/reverb.ts` synthesises its own impulse response, so every sound sits in the same room. Effects are placed in the stereo field from where they happened on the board.
+Audio: `src/audio/music.ts` adds the score the design always called for, six layers on a four-chord loop in D natural minor that never resolves, each gated by how bad the incident is, so the music is a readout of the board rather than a bed under it. It ends on a verdict: the tritone holds unresolved on a loss, recovery releases tension without resolving, and the suspended dominant lands when the PIR is filed. `src/audio/reverb.ts` synthesises its own impulse response, so every sound sits in the same room. Effects are placed in the stereo field from where they happened on the board.
 
-Gameplay: the threat forecast (`src/sim/forecast.ts`), an assist that rings every node the worm could reach next turn. It mirrors the spread rules exactly but reads the visible view, so it is blind wherever the EDR coverage is, which makes it an expression of pillar 2 rather than a workaround for it. **Off by default**: it changes no locked economy value, but it does change how much work the player does to read the board, so switching it on by default is a feel decision and therefore Craig's.
+Gameplay: the threat forecast (`src/sim/forecast.ts`), an assist that rings every node the worm could reach next turn. It mirrors the spread rules exactly but reads the visible view, so it is blind wherever the EDR coverage is, which makes it an expression of pillar 2 rather than a workaround for it. Phase 7 shipped it off by default. Craig's Phase 8 decision switches it on by default while keeping the setting, and uses amber for possible routes so magenta remains exclusive to observable compromise.
 
 Quality tiers: post-processing is the one thing here that could threaten the 60fps floor, so it ships with three tiers and a working bypass at LOW, auto-selected by watching the real frame rate and steppable by hand in settings. Measured on the full HIGH tier: 0.43ms average frame, 1.8ms worst, against a 16.7ms budget.
 
 Done when: a still of the board is indistinguishable from a shipped indie tactics game, the score is audibly reading the incident, and the frame budget is unmoved.
+
+**Phase 8, Incident Command.** Reopen the measured pacing and win condition, then build the missing dramatic arc around the existing mechanics. Add containment declaration and recovery, a fog-safe event theatre, handover and live guidance, truthful state markers, action-specific procedural effects and sound, safe-area layout, PIR chronology fixes and production debug gating. Keep every visual and sound procedural.
+
+Done when: the new 4,000-seed balance gate passes, competent human runs land at 12-18 minutes, each decision explains its visible consequence, End Hour is tense without leaking fog, all shipped text scales remain usable, and browser playtesting confirms the full handover-to-PIR journey with a clean console.
 
 ## v2 parking lot (do not build in v1)
 
