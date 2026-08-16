@@ -147,7 +147,7 @@
 
   <h2>1. Why Phase 8 exists</h2>
   <p>The current build is technically healthy. TypeScript, lint, 104 tests and the production build pass. The Phase 7 renderer also holds a large frame-time margin.</p>
-  <p>The game still finishes before its best systems mature. A fresh 1,000-run measurement put the competent reference bot at 4.7 turns and the random bot at 5.1 turns. Business pressure, service recovery and most of the adaptive score rarely get enough time to matter. Phase 8 replaces the old 20 to 30 turn estimate with a measured target of 8 to 12 decision hours and 12 to 18 human minutes.</p>
+  <p>The game still finishes before its best systems mature. A fresh 1,000-run measurement put the competent reference bot at 4.7 turns and the random bot at 5.1 turns. Business pressure, service recovery and most of the adaptive score rarely get enough time to matter. Phase 8 keeps the 12 to 18 human-minute target. Its final bot proxy bands expect greedy runs to average T+10h to T+14h and random-legal runs to average T+10h to T+16h.</p>
 
   <table>
     <thead><tr><th>Area</th><th>Current evidence</th><th>Phase 8 response</th></tr></thead>
@@ -214,18 +214,19 @@
   <p>The final rating is deterministic. A loss is TOTAL LOSS. A win with at least 25% final blast radius is REPORTABLE INCIDENT. A lower-blast-radius win is CONTAINED when any encryption happened after detection, containment was declared prematurely or a critical service remained isolated at filing. Only a win with none of those conditions is NEAR MISS.</p>
 
   <h2>5. Threat tempo and balance</h2>
-  <p>The current worm attempts every clean live cable from every infected node. Once a hub is involved, the incident expands too quickly to produce a tactical arc.</p>
-  <p>Phase 8 changes the scheduler while preserving the 60% per-attempt concept:</p>
+  <p>Before Phase 8, the worm attempted every clean live cable from every infected node. Once a hub was involved, the incident expanded too quickly to produce a tactical arc.</p>
+  <p>Phase 8 replaces that scheduler with the measured live rules:</p>
   <ol>
     <li>Sort true infected, non-isolated source IDs. For each source, sort its true clean, non-isolated neighbours connected by a live cable.</li>
     <li>Use the seeded RNG to choose one eligible target uniformly for each source. A source contributes at most one candidate in an hour, so high-degree nodes gain options but not extra attempts.</li>
     <li>Shuffle those source-target candidates with a seeded Fisher-Yates pass.</li>
-    <li>Take the first four candidates and resolve each 60% spread roll in that shuffled order.</li>
-    <li>Age infection and encrypt nodes exactly as the current simulation does.</li>
+    <li>Take the first three candidates and resolve each spread attempt at the locked 1.00 chance in that shuffled order.</li>
+    <li>Age infection and encrypt a node after seven infected turns.</li>
   </ol>
-  <p>The first implementation uses an attempt cap of four, dwell of three and spread chance of 0.6. These values are hypotheses for the sweep, not a new lock.</p>
+  <p>The measured live lock is an attempt cap of three, dwell of two, spread chance of 1.00 and infection lifetime of seven.</p>
 
-  <h3>Tuning order</h3>
+  <h3>Original tuning order</h3>
+  <p>The implementation began with the following search order. It remains here as the historical plan; later controller-authorised extensions are recorded in the measured lock.</p>
   <ol>
     <li>Sweep global attempt caps of three, four and five.</li>
     <li>If no result passes, sweep dwell at two and three using the best cap.</li>

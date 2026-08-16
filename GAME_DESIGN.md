@@ -7,8 +7,8 @@ Status: pre-production. Numbers are starting values, all tunable via data files.
 
 Approved by Craig on 16 August 2026. This amendment reopens the Phase 3.10 pacing lock and the original win condition because measured runs finish around T+05h, before business pressure, recovery and the adaptive score mature. It supersedes only the conflicting rules named below.
 
-- **Run target:** 12 to 18 human minutes and typically 8 to 12 decision hours. Bot turns are a repeatable balance proxy, not a claim about wall time.
-- **Threat scheduler:** each infected source contributes at most one uniformly selected eligible target per hour. Seeded candidate order is shuffled and a global cap, initially four, limits attempts. Dwell, cap and chance are relocked only after the Phase 8 sweep passes its published bands.
+- **Run target:** 12 to 18 human minutes. Bot turns are a repeatable balance proxy, not a claim about wall time. The measured gate expects greedy runs to average T+10h to T+14h and random-legal runs to average T+10h to T+16h.
+- **Threat scheduler:** each infected source contributes at most one uniformly selected eligible target per hour. Seeded candidate order is shuffled and a global cap of three limits attempts. The Phase 8 lock uses dwell 2, spread chance 1.00 and infection lifetime 7.
 - **Containment:** clearing visible infection does not auto-win. When no infection is visible, the player may declare containment. A false declaration discards unused AP, records a High finding and resolves the normal active-response hour without revealing hidden locations. A true declaration enters recovery immediately with fresh AP and no extra threat or cost step.
 - **Recovery:** no spread or infection ageing. Reconnect and Restore remain available. Advancing a recovery hour still resolves isolation ageing, downtime score, pressure and pressure-driven overrides. Filing the PIR ends a successful run immediately. Critical services left isolated create a finding and cap the rating at CONTAINED.
 - **Forecast:** on by default, still fog-safe and optional in settings. Forecast risk uses amber. Magenta remains exclusive to observable compromise.
@@ -28,7 +28,7 @@ It's 03:12 on a Wednesday and the on-call phone is screaming. Ransomware is loos
 
 ## Core loop
 
-Per turn (about 60-90 seconds of thought): read the board, spend up to 2 Action Points, end the hour, watch the threat resolve and events fire, reassess. Per run: first detection, containment fight, eradication, declaration, recovery, PIR. Target run length 12-18 minutes, typically 8-12 decision hours.
+Per turn (about 60-90 seconds of thought): read the board, spend up to 2 Action Points, end the hour, watch the threat resolve and events fire, reassess. Per run: first detection, containment fight, eradication, declaration, recovery, PIR. The human run target is 12-18 minutes. The bot proxy bands are T+10h to T+14h for greedy runs and T+10h to T+16h for random-legal runs.
 
 ## The board
 
@@ -44,9 +44,9 @@ v1 ships the hand-authored topology (the MERIDIAN MUTUAL scenario, defined in JS
 
 ## The threat (v1: the WORM)
 
-- Patient zero appears at a random edge workstation, then the worm dwells: it spreads unopposed for a few turns (dwellTurns, default 3, in sim config) before the incident is detected. The player is paged to an established foothold at T+01h, not a lone patient zero. (Added in Phase 3.5 as a structural difficulty lever: a single patient zero was trivially found and cured, so a competent player never lost. Locked at 3 in Phase 3.10, the value that put the greedy reference bot inside the 40-70 percent target band, see the v1 economy baseline below.)
+- Patient zero appears at a random edge workstation, then the worm spreads unopposed for 2 dwell turns before the incident is detected. The player is paged to an established foothold at T+01h, not a lone patient zero. Phase 3.10 previously locked dwell at 3; that historical baseline is recorded below and was superseded by the Phase 8 measured lock.
 - Each INFECTED, non-isolated source contributes at most one attempt per hour. Its eligible clean, non-isolated neighbours are sorted, one target is selected uniformly through the seeded RNG, source-target candidates are shuffled through the same RNG, and the global cap is applied before each selected attempt rolls its spread chance. This Phase 8 scheduler prevents hubs from multiplying the number of attempts while preserving their routing options and deterministic replay.
-- A node infected for 3 consecutive turns becomes ENCRYPTED: it stops spreading, but it is lost unless restored, and its value bleeds score every turn.
+- A node infected for 7 consecutive turns becomes ENCRYPTED: it stops spreading, but it is lost unless restored, and its value bleeds score every turn.
 - Detection: nodes with EDR coverage (about 60 percent of the board, marked visibly) reveal infection the turn it lands. Uncovered nodes show clean until scanned or until they encrypt. This is the fog of war.
 
 Threat variants (STALKER, which routes toward the backup node; LOUDMOUTH, fast but always visible) are designed here but parked for v2.
@@ -62,13 +62,13 @@ Threat variants (STALKER, which routes toward the backup node; LOUDMOUTH, fast b
 
 ## v1 economy baseline (Phase 3.10, partially reopened by Phase 8)
 
-These are the Phase 3.10 values. Craig's Phase 8 decision reopens only dwell, spread chance and the new global attempt cap, in that order, until the new pacing gate passes. All live in `src/sim/config.ts`.
+These figures preserve the historical Phase 3.10 baseline. Later controller-authorised Phase 8 measurements also reopened infection lifetime. The current values are recorded in the Phase 8 measured lock below and live in `src/sim/config.ts`.
 
-- **Foothold:** dwellTurns 3, spreadChance 0.6, encryptAfterTurns 3, lossBlastRadius 0.6.
+- **Historical foothold baseline:** dwellTurns 3, spreadChance 0.6, encryptAfterTurns 3, lossBlastRadius 0.6. The Phase 8 lock supersedes the first three values; lossBlastRadius remains 0.6.
 - **Economy:** apPerTurn 2, backupCredits 2, emergency +2 AP once per run. Action costs: deploy sensor / isolate / reconnect 1 AP, patch / restore 2 AP, failed-patch probe 1 AP.
 - **Pressure:** pressureMax 100, recovery 10 per turn, weights workstation 4 / server 12 / backup 12 / domain-controller 15 / router 18.
 
-**Measured on the locked economy (4,000 games each, single v1 topology):** the greedy reference bot wins **67 percent** (inside the 40-70 percent target band), the random-legal bot (casual-play floor) wins **18 percent**, and an undefended board reaches 60 percent encryption in **87 percent** of runs, mean **4.9 player-turns** from detection.
+**Historical Phase 3.10 baseline (4,000 games each, single v1 topology):** the greedy reference bot won **67 percent** (inside the former 40-70 percent target band), the random-legal bot won **18 percent**, and an undefended board reached 60 percent encryption in **87 percent** of runs, mean **4.9 player-turns** from detection. The current measurements are in the Phase 8 lock below.
 
 These numbers were reached through the measured 3.5-3.9 sequence, one lever at a time (dwell, sensors, business pressure, the AP cut, backup credits), each with its own before/after instrumentation. That sequence remains the audit trail. Phase 8 adds a second audit trail: sweep attempt caps three, four and five; then dwell two and three only if needed; then spread chance 0.55, 0.60 and 0.65 only if needed. Change one lever per pass and record the result.
 
@@ -89,8 +89,8 @@ One page, Fira Code, generated from the actual run. The sibling of Tailgate's En
 - Metrics: time to detect, time to contain, blast radius (percent of estate encrypted), downtime hours from isolation, backup credits burned, whether emergency change control was bypassed.
 - Findings drawn from real events with in-fiction timestamps ("Finding: EDR coverage gap on FINANCE-02 allowed undetected lateral movement, T+04h. Severity: High").
 - Rating: **NEAR MISS** (no additional encryption after detection), **CONTAINED** (blast radius under 25 percent, crown jewels intact), **REPORTABLE INCIDENT** (blast radius 25-60 percent: the regulator hears about this), **TOTAL LOSS** (defeat).
-  - NEAR MISS was redefined in Phase 4. Dwell (3 turns) means a node can arrive already encrypted at T+01h, so "nothing encrypted, ever" is unreachable on some seeds through no fault of the player. You are judged on the response, not the inherited dwell, so NEAR MISS is now "no encryption after detection, no premature declaration and no unrecovered critical service". A run can be a NEAR MISS with an inherited encrypted node on the board. A premature declaration or unrecovered critical-service finding caps the rating at CONTAINED. REPORTABLE and TOTAL LOSS are unchanged.
-  - Time to detect is where the dwell is revealed to the player for the first time: "initial access preceded detection by 3 hours".
+  - NEAR MISS was redefined in Phase 4, when the live 3-turn dwell could hand over an already encrypted node at T+01h. You are judged on the response, not the inherited dwell, so NEAR MISS is now "no encryption after detection, no premature declaration and no unrecovered critical service". The Phase 8 timing lock does not change that rating rule. A premature declaration or unrecovered critical-service finding caps the rating at CONTAINED. REPORTABLE and TOTAL LOSS are unchanged.
+  - Time to detect is where the current 2-turn dwell is revealed to the player for the first time: "initial access preceded detection by 2 hours".
 - [ NEW INCIDENT ] resets cleanly. Best rating per named scenario and a short run history persist in localStorage.
 
 ## Visual direction
