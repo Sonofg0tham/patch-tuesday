@@ -56,11 +56,37 @@ export function createHandover(
 ): Handover {
   let timers: ReturnType<typeof setTimeout>[] = [];
   let visible = false;
+  let restoreFocus: HTMLElement | null = null;
+  const backgroundInert = new Map<HTMLElement, boolean>();
 
-  const blockEscape = (event: KeyboardEvent): void => {
-    if (!visible || event.key !== 'Escape') return;
+  const containModalFocus = (event: KeyboardEvent): void => {
+    if (!visible) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+
+    const controls = focusableControls(container);
+    if (controls.length === 0) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+
+    const activeIndex = controls.indexOf(document.activeElement as HTMLElement);
+    const target = event.shiftKey
+      ? activeIndex <= 0
+        ? controls.at(-1)
+        : null
+      : activeIndex === -1 || activeIndex === controls.length - 1
+        ? controls[0]
+        : null;
+    if (!target) return;
     event.preventDefault();
     event.stopImmediatePropagation();
+    target.focus();
   };
 
   function clearTimers(): void {
@@ -69,23 +95,26 @@ export function createHandover(
   }
 
   function dismiss(): void {
+    const wasVisible = visible;
     clearTimers();
     visible = false;
     container.hidden = true;
     container.classList.remove('handover-active');
     container.replaceChildren();
-    window.removeEventListener('keydown', blockEscape, true);
+    window.removeEventListener('keydown', containModalFocus, true);
+    if (wasVisible) restoreBackground();
   }
 
   function show(model: HandoverModel, options: { reducedMotion: boolean }): void {
     dismiss();
+    isolateBackground();
     visible = true;
     container.hidden = false;
     container.classList.add('handover-active');
     container.setAttribute('role', 'dialog');
     container.setAttribute('aria-modal', 'true');
     container.setAttribute('aria-labelledby', 'handover-title');
-    window.addEventListener('keydown', blockEscape, true);
+    window.addEventListener('keydown', containModalFocus, true);
 
     const panel = document.createElement('section');
     panel.className = 'handover-panel';
@@ -115,6 +144,26 @@ export function createHandover(
       beginPresentation(panel, model, options);
     });
     accept.focus();
+  }
+
+  function isolateBackground(): void {
+    restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    backgroundInert.clear();
+    const parent = container.parentElement;
+    if (!parent) return;
+    for (const sibling of parent.children) {
+      if (sibling === container || !(sibling instanceof HTMLElement)) continue;
+      backgroundInert.set(sibling, sibling.inert);
+      sibling.inert = true;
+    }
+  }
+
+  function restoreBackground(): void {
+    for (const [element, wasInert] of backgroundInert) element.inert = wasInert;
+    backgroundInert.clear();
+    const previous = restoreFocus;
+    restoreFocus = null;
+    if (previous?.isConnected && !previous.inert) previous.focus();
   }
 
   function beginPresentation(
@@ -174,6 +223,14 @@ export function createHandover(
   }
 
   return { show, dismiss };
+}
+
+function focusableControls(container: HTMLElement): HTMLElement[] {
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((element) => !element.hidden);
 }
 
 function handoverLines(model: HandoverModel): string[] {
