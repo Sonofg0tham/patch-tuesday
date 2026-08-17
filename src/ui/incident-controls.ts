@@ -43,7 +43,12 @@ export function deriveIncidentControls(
   const controls: IncidentControlModel[] =
     state.phase === 'active'
       ? [
-          { command: 'end-hour', label: 'End Hour', disabled: resolving, primary: true },
+          {
+            command: 'end-hour',
+            label: resolving ? 'RESOLVING' : 'End Hour',
+            disabled: resolving,
+            primary: true,
+          },
           ...(canDeclare
             ? [
                 {
@@ -58,7 +63,7 @@ export function deriveIncidentControls(
       : [
           {
             command: 'advance-recovery',
-            label: 'Advance Recovery Hour',
+            label: resolving ? 'RESOLVING' : 'Advance Recovery Hour',
             disabled: resolving,
             primary: true,
           },

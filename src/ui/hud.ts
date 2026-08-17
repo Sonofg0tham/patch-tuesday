@@ -3,12 +3,14 @@
 
 import type { IncidentPhase } from '../sim/types';
 
+export type HudNoticeTone = 'defence' | 'uncertainty' | 'threat';
+
 export interface Hud {
   setTurn(turn: number): void;
   /** Business pressure meter: 0..max, with a warning state near and at max. */
   setPressure(value: number, max: number): void;
   /** A transient one-line notice (e.g. a forced reconnect), '' clears it. */
-  setNotice(text: string): void;
+  setNotice(text: string, tone: HudNoticeTone): void;
 }
 
 export interface SituationPanelModel {
@@ -52,8 +54,9 @@ export function createHud(): Hud {
         ? 'BUSINESS PRESSURE - OVERRIDE IMMINENT'
         : 'BUSINESS PRESSURE';
     },
-    setNotice(text) {
+    setNotice(text, tone) {
       noticeEl.textContent = text;
+      noticeEl.dataset.tone = tone;
       noticeEl.classList.toggle('active', text !== '');
     },
   };

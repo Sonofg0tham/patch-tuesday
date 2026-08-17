@@ -1,192 +1,144 @@
-// Replays a turn's spread as a magenta creep travelling node by node, then the
-// encryption transitions. It animates the change in the VISIBLE view, never the
-// true state, so a hidden (non-EDR) infection never leaks through the animation.
-// A creep is only drawn from an already-visible source; a node that goes
-// straight to dark without ever showing infected is the fog-of-war horror: it
-// just locks, with no creep to explain where it came from.
+// Low-level, fog-safe threat traces. The turn director supplies the real
+// projected route for observable attempts, so this module never guesses a
+// source from neighbouring nodes. Hidden attempts receive one amber pulse at
+// the board centre and carry no node or cable position.
 
 import * as THREE from 'three';
 import { palette } from '../config/palette';
 import type { Topology } from '../data/topology';
-import type { VisibleState } from '../sim/types';
 import { CABLE_HEIGHT, type Board } from './board';
 
-// Feel knobs. These are timings, so they are Craig's to tune, not objective.
-const CREEP_DURATION = 0.34; // seconds for a creep to travel a cable
-const LOCK_DURATION = 0.26; // seconds for an encryption to land
-const STAGGER = 0.12; // gap between successive animations in the wave
-const CREEP_RADIUS = 0.14;
+const TRACE_DURATION = 0.34;
+const TELEMETRY_PULSE_DURATION = 0.28;
+const TRACE_RADIUS = 0.14;
 
-type View = Record<string, VisibleState>;
-
-interface Step {
+interface ActiveEffect {
+  kind: 'route' | 'telemetry-gap';
   start: number;
   duration: number;
-  /** The visible state to apply when this step finishes. */
-  finalState: VisibleState;
-  node: string;
-  /** A travelling creep mesh, or null for an in-place flare / lock. */
-  mesh: THREE.Mesh | null;
+  mesh: THREE.Mesh;
   from: THREE.Vector3;
   to: THREE.Vector3;
-  done: boolean;
+  pulseScale: number;
+  ownsMaterial: boolean;
 }
 
 export interface SpreadAnimator {
-  /** Queue the animation from the current visible view to the next one. */
-  play(before: View, after: View): void;
-  /** Advance the animation. Called every frame with performance.now() / 1000. */
+  /** Trace one observable attempt along its exact projected route. */
+  trace(source: string, target: string): void;
+  /** Show grouped hidden activity without a node, route or stereo position. */
+  pulseTelemetryGap(attempts: number): void;
+  /** Advance active low-level effects. */
   update(nowSeconds: number): void;
-  isPlaying(): boolean;
-  onComplete(callback: () => void): void;
-  /** A node's infection just became visible (a creep landed). For audio sync. */
-  onReveal(callback: (nodeId: string) => void): void;
-  /** A node just encrypted. For the encryption sting, synced to the visual. */
-  onLock(callback: (nodeId: string) => void): void;
+  /** Remove unfinished effects after skip, interrupt or a new incident. */
+  clear(): void;
 }
 
-export function createSpreadAnimator(board: Board, topology: Topology): SpreadAnimator {
-  const creepGeometry = new THREE.SphereGeometry(CREEP_RADIUS, 12, 12);
-  // A glowing magenta bead travelling the cable, additive so it reads as light
-  // running along the wiring into the target.
-  const creepMaterial = new THREE.MeshBasicMaterial({
+export function createSpreadAnimator(
+  board: Board,
+  topology: Topology,
+  nowSeconds: () => number = () => performance.now() / 1000,
+): SpreadAnimator {
+  const traceGeometry = new THREE.SphereGeometry(TRACE_RADIUS, 12, 12);
+  const traceMaterial = new THREE.MeshBasicMaterial({
     color: palette.infection,
     transparent: true,
     opacity: 0.95,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
-  let steps: Step[] = [];
-  let active = false;
-  let completeCallback: () => void = () => {};
-  let revealCallback: (nodeId: string) => void = () => {};
-  let lockCallback: (nodeId: string) => void = () => {};
+  const pulseGeometry = new THREE.RingGeometry(0.32, 0.42, 24);
+  const pulseMaterial = new THREE.MeshBasicMaterial({
+    color: palette.pressure,
+    transparent: true,
+    opacity: 0.72,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const active: ActiveEffect[] = [];
 
-  function cablePoint(nodeId: string): THREE.Vector3 {
+  function cablePoint(nodeId: string): THREE.Vector3 | null {
     const node = topology.byId.get(nodeId);
-    return new THREE.Vector3(node?.x ?? 0, CABLE_HEIGHT, node?.z ?? 0);
+    return node ? new THREE.Vector3(node.x, CABLE_HEIGHT, node.z) : null;
   }
 
-  // A neighbour that already reads infected or encrypted, to creep from. Returns
-  // null when the true source is hidden, so we never reveal it.
-  function visibleSource(targetId: string, before: View): string | null {
-    const node = topology.byId.get(targetId);
-    if (!node) return null;
-    for (const neighbour of node.neighbours) {
-      const state = before[neighbour];
-      if (state === 'infected' || state === 'encrypted') return neighbour;
-    }
-    return null;
+  function trace(source: string, target: string): void {
+    const from = cablePoint(source);
+    const to = cablePoint(target);
+    if (from === null || to === null) return;
+
+    const mesh = new THREE.Mesh(traceGeometry, traceMaterial);
+    mesh.visible = false;
+    mesh.userData.kind = 'route';
+    mesh.userData.source = source;
+    mesh.userData.target = target;
+    board.group.add(mesh);
+    active.push({
+      kind: 'route',
+      start: nowSeconds(),
+      duration: TRACE_DURATION,
+      mesh,
+      from,
+      to,
+      pulseScale: 1,
+      ownsMaterial: false,
+    });
   }
 
-  function play(before: View, after: View): void {
-    const reveals: string[] = [];
-    const locks: string[] = [];
-    for (const id of Object.keys(after)) {
-      const was = before[id] ?? 'clean';
-      const now = after[id];
-      if (now === was) continue;
-      if (now === 'infected') reveals.push(id);
-      else if (now === 'encrypted') locks.push(id);
-    }
-    reveals.sort();
-    locks.sort();
-
-    const queued: Step[] = [];
-    const base = performance.now() / 1000;
-    let slot = 0;
-
-    // Reveals first: a creep from a visible source, or an in-place flare when
-    // the source is hidden (fog keeps the origin secret).
-    for (const target of reveals) {
-      const start = base + slot * STAGGER;
-      slot += 1;
-      const source = visibleSource(target, before);
-      const mesh = source === null ? null : new THREE.Mesh(creepGeometry, creepMaterial);
-      if (mesh) {
-        mesh.visible = false;
-        board.group.add(mesh);
-      }
-      queued.push({
-        start,
-        duration: source === null ? LOCK_DURATION : CREEP_DURATION,
-        finalState: 'infected',
-        node: target,
-        mesh,
-        from: source === null ? cablePoint(target) : cablePoint(source),
-        to: cablePoint(target),
-        done: false,
-      });
-    }
-
-    // Encryptions after the creeps have travelled, so the wave reads in order.
-    for (const node of locks) {
-      queued.push({
-        start: base + slot * STAGGER,
-        duration: LOCK_DURATION,
-        finalState: 'encrypted',
-        node,
-        mesh: null,
-        from: cablePoint(node),
-        to: cablePoint(node),
-        done: false,
-      });
-      slot += 1;
-    }
-
-    steps = queued;
-    active = true;
+  function pulseTelemetryGap(attempts: number): void {
+    const material = pulseMaterial.clone();
+    const mesh = new THREE.Mesh(pulseGeometry, material);
+    mesh.visible = false;
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(0, CABLE_HEIGHT, 0);
+    mesh.userData.kind = 'telemetry-gap';
+    mesh.userData.attempts = Math.max(1, Math.floor(attempts));
+    board.group.add(mesh);
+    active.push({
+      kind: 'telemetry-gap',
+      start: nowSeconds(),
+      duration: TELEMETRY_PULSE_DURATION,
+      mesh,
+      from: mesh.position.clone(),
+      to: mesh.position.clone(),
+      pulseScale: 1 + Math.min(3, Math.max(0, attempts - 1)) * 0.12,
+      ownsMaterial: true,
+    });
   }
 
-  function update(nowSeconds: number): void {
-    if (!active) return;
-    let allDone = true;
+  function remove(effect: ActiveEffect): void {
+    board.group.remove(effect.mesh);
+    if (effect.ownsMaterial) (effect.mesh.material as THREE.Material).dispose();
+  }
 
-    for (const step of steps) {
-      if (step.done) continue;
-      if (nowSeconds < step.start) {
-        allDone = false;
-        continue;
-      }
-      const t = Math.min(1, (nowSeconds - step.start) / step.duration);
-      if (step.mesh) {
-        step.mesh.visible = true;
-        step.mesh.position.lerpVectors(step.from, step.to, t);
-      }
-      if (t >= 1) {
-        if (step.mesh) board.group.remove(step.mesh);
-        // animate=true runs the board's encryption transition (ignite + die)
-        // rather than snapping the state; harmless for the infected reveal.
-        board.setVisibleState(step.node, step.finalState, true);
-        if (step.finalState === 'encrypted') lockCallback(step.node);
-        else if (step.finalState === 'infected') revealCallback(step.node);
-        step.done = true;
+  function update(now: number): void {
+    for (let index = active.length - 1; index >= 0; index -= 1) {
+      const effect = active[index];
+      if (!effect || now < effect.start) continue;
+
+      const progress = Math.min(1, Math.max(0, (now - effect.start) / effect.duration));
+      effect.mesh.visible = true;
+      if (effect.kind === 'route') {
+        effect.mesh.position.lerpVectors(effect.from, effect.to, progress);
       } else {
-        allDone = false;
+        effect.mesh.position.copy(effect.from);
+        const scale = effect.pulseScale * (0.75 + progress * 0.55);
+        effect.mesh.scale.setScalar(scale);
+        (effect.mesh.material as THREE.MeshBasicMaterial).opacity = (1 - progress) * 0.72;
       }
-    }
 
-    if (allDone) {
-      steps = [];
-      active = false;
-      completeCallback();
+      if (progress >= 1) {
+        remove(effect);
+        active.splice(index, 1);
+      }
     }
   }
 
-  return {
-    play,
-    update,
-    isPlaying() {
-      return active;
-    },
-    onComplete(callback) {
-      completeCallback = callback;
-    },
-    onReveal(callback) {
-      revealCallback = callback;
-    },
-    onLock(callback) {
-      lockCallback = callback;
-    },
-  };
+  function clear(): void {
+    for (const effect of active) remove(effect);
+    active.length = 0;
+  }
+
+  return { trace, pulseTelemetryGap, update, clear };
 }

@@ -36,6 +36,7 @@ import { createPostFx } from './render/postfx';
 import { tickMaterials } from './render/materials';
 import { createPointerPicker } from './render/picking';
 import { createSpreadAnimator } from './render/spread-animation';
+import { createTurnDirector } from './render/turn-director';
 import { ForecastRouteLayer } from './render/forecast-routes';
 import { createOverlay } from './ui/overlay';
 import { createRoster } from './ui/roster';
@@ -123,26 +124,13 @@ function unlockAudio(): void {
 window.addEventListener('pointerdown', unlockAudio);
 window.addEventListener('keydown', unlockAudio);
 
-// The threat is audible as it moves: a tense tick as each creep lands, the
-// signature sting as a node encrypts (heavier for the crown jewels), and a
-// small camera knock on the lock.
-// A node's x position across the estate becomes its place in the stereo field,
-// so during resolution you can hear which side of the board the worm is working
-// on before you have found it on screen.
+// Observable board positions become stereo positions. Hidden telemetry never
+// calls this helper and stays centred, so audio cannot reveal a secret route.
 function panFor(nodeId: string): number {
   const node = topology.byId.get(nodeId);
   if (!node || topology.halfWidth <= 0) return 0;
   return Math.max(-1, Math.min(1, node.x / topology.halfWidth)) * 0.75;
 }
-
-animator.onReveal((nodeId) => audio.play('spread', { pan: panFor(nodeId) }));
-animator.onLock((nodeId) => {
-  const type = topology.byId.get(nodeId)?.type;
-  audio.play(type === 'domain-controller' || type === 'backup' ? 'encrypt-heavy' : 'encrypt', {
-    pan: panFor(nodeId),
-  });
-  shake.add(0.25);
-});
 
 // The war-room header names the estate under attack.
 mustFind('hud-subtitle').textContent = topology.name;
@@ -161,6 +149,15 @@ let paused = false;
 let handoverActive = !briefMode;
 let latestFps: number | null = null;
 let previewKind: ActionKind | null = null;
+let resolutionLocked = false;
+let pendingResolution: { nextState: GameState; trueEvents: TurnEvent[] } | null = null;
+
+const director = createTurnDirector({
+  onAnalysis: presentAnalysis,
+  onBeat: presentResolutionBeat,
+  onSettle: settleResolution,
+  onComplete: completeResolution,
+});
 
 // Highlight = whatever the user is pointing at or has keyboard-focused.
 // Selection = what the user chose to act on. Pointer hover wins over keyboard.
@@ -220,7 +217,7 @@ function canOfferDeclaration(): boolean {
 }
 
 function renderIncidentControls(): void {
-  const resolving = animator.isPlaying();
+  const resolving = resolutionLocked;
   incidentControls.render({ phase: state.phase }, canOfferDeclaration(), resolving);
   incidentControls.setEnabled(
     !paused && !handoverActive && !ended && state.status === 'playing' && !resolving,
@@ -271,11 +268,18 @@ function renderHud(): void {
   renderIncidentControls();
 }
 
-// Full refresh: board, isolation, HUD, inspector, debug, and the end screen.
-// Called after actions (instant) and once a turn's spread animation completes.
-function renderState(): void {
-  currentPresentation = toPresentationView(state, topology);
+// Render one fog-safe snapshot. During theatre this may be a staged view; only
+// settle is allowed to open a terminal PIR, so a loss never arrives before its
+// public encryption beat.
+function renderPresentation(
+  presentation: PresentationView,
+  options: { animateEncryptionNode?: string; allowTerminal?: boolean } = {},
+): void {
+  currentPresentation = presentation;
   currentView = visibleStates(currentPresentation);
+  if (options.animateEncryptionNode) {
+    board.setVisibleState(options.animateEncryptionNode, 'encrypted', !motionReduced());
+  }
   board.applyView(currentView);
   for (const node of topology.nodes) {
     const presentation = currentPresentation.nodes[node.id];
@@ -290,7 +294,13 @@ function renderState(): void {
   refreshInspector();
   refreshPreview();
   if (debug.isVisible()) debug.render(state, topology, lastEvents);
-  if (state.status !== 'playing') endGame();
+  if (options.allowTerminal !== false && state.status !== 'playing') endGame();
+}
+
+// Full refresh from the current simulation state. Player actions and immediate
+// phase transitions use this path; hourly resolution uses staged projections.
+function renderState(): void {
+  renderPresentation(toPresentationView(state, topology));
 }
 
 // The threat forecast assist: ring every node the worm could reach next turn,
@@ -359,7 +369,7 @@ function act(kind: ActionKind): void {
     briefMode ||
     paused ||
     handoverActive ||
-    animator.isPlaying() ||
+    resolutionLocked ||
     state.status !== 'playing'
   ) {
     return;
@@ -398,7 +408,7 @@ const incidentControls = createIncidentControls(mustFind('incident-controls'), {
   onDeclareContainment: declareCurrentContainment,
   onFileReview: fileCurrentReview,
   onSkip() {
-    if (animator.isPlaying()) animator.update(Number.MAX_SAFE_INTEGER);
+    director.skip();
   },
 });
 
@@ -425,19 +435,21 @@ createPointerPicker(context, board, {
 function resolveCurrentHour(): void {
   if (!canIssueLifecycleCommand()) return;
   const before = state;
-  resolveAnimated(before, endTurn(before, topology));
+  const beforePresentation = toPresentationView(before, topology);
+  resolveHourly(before, beforePresentation, endTurn(before, topology));
 }
 
 function declareCurrentContainment(): void {
   if (!canIssueLifecycleCommand() || !canOfferDeclaration()) return;
   const before = state;
+  const beforePresentation = toPresentationView(before, topology);
   const result = declareContainment(before, topology);
   if (result.events.length === 0) return;
   const confirmed = result.events.some(
     (event) => event.kind === 'containment-declaration' && event.confirmed,
   );
   if (!confirmed) {
-    resolveAnimated(before, result);
+    resolveHourly(before, beforePresentation, result);
     return;
   }
 
@@ -455,27 +467,40 @@ function fileCurrentReview(): void {
   renderState();
 }
 
-function resolveAnimated(
+function resolveHourly(
   beforeState: GameState,
+  beforePresentation: PresentationView,
   result: { nextState: GameState; events: TurnEvent[] },
+  instant = false,
 ): void {
-  const beforeView = currentView;
   const turnNow = beforeState.turn;
-  state = result.nextState;
-  lastEvents = result.events;
   recorder.record(turnNow, result.events);
-  recorder.tickDowntime(state);
+  recorder.tickDowntime(result.nextState);
 
-  const observable = projectTurnEvents(result.events, beforeState, state, topology);
-  timeline.appendResolution(state.turn, observable, { labelOf: nodeLabel });
-  currentPresentation = toPresentationView(state, topology);
-  currentView = visibleStates(currentPresentation);
-  publishObservableOverrides(observable);
-
-  renderHud();
+  const observable = projectTurnEvents(
+    result.events,
+    beforeState,
+    result.nextState,
+    topology,
+  );
+  const afterPresentation = toPresentationView(result.nextState, topology);
+  pendingResolution = { nextState: result.nextState, trueEvents: result.events };
+  resolutionLocked = true;
+  animator.clear();
   setInputsEnabled(false);
-  animator.play(beforeView, currentView);
   renderIncidentControls();
+
+  if (instant) {
+    settleResolution(afterPresentation, observable);
+    completeResolution();
+    return;
+  }
+
+  director.play(
+    { before: beforePresentation, after: afterPresentation, events: observable },
+    { reducedMotion: motionReduced() },
+    performance.now() / 1000,
+  );
 }
 
 function recordImmediateResolution(
@@ -490,36 +515,115 @@ function recordImmediateResolution(
   lastEvents = events;
 }
 
-function publishObservableOverrides(events: readonly ObservableTurnEvent[]): void {
+function presentAnalysis(view: PresentationView): void {
+  renderPresentation(view, { allowTerminal: false });
+  hud.setNotice('Forensic telemetry sweep in progress', 'defence');
+  audio.play('analysis');
+}
+
+function presentResolutionBeat(
+  event: ObservableTurnEvent,
+  _index: number,
+  view: PresentationView,
+): void {
+  renderPresentation(view, {
+    animateEncryptionNode: event.kind === 'encrypted' ? event.node : undefined,
+    allowTerminal: false,
+  });
+
+  switch (event.kind) {
+    case 'attempt':
+      animator.trace(event.source, event.target);
+      audio.play('spread', { pan: panFor(event.target) });
+      break;
+    case 'telemetry-gap':
+      animator.pulseTelemetryGap(event.attempts);
+      audio.play('spread');
+      break;
+    case 'encrypted': {
+      const type = topology.byId.get(event.node)?.type;
+      audio.play(
+        type === 'domain-controller' || type === 'backup' ? 'encrypt-heavy' : 'encrypt',
+        { pan: panFor(event.node) },
+      );
+      shake.add(0.25);
+      break;
+    }
+    case 'override':
+      board.flashOverride(event.node);
+      audio.play('override', { pan: panFor(event.node) });
+      shake.add(0.6);
+      break;
+    case 'containment-declaration':
+      if (!event.confirmed) audio.play('denied');
+      break;
+    case 'infected':
+    case 'action':
+    case 'recovery-hour':
+    case 'review-filed':
+      break;
+  }
+}
+
+function settleResolution(
+  view: PresentationView,
+  events: readonly ObservableTurnEvent[],
+): void {
+  const pending = pendingResolution;
+  if (pending === null) return;
+  pendingResolution = null;
+  state = pending.nextState;
+  lastEvents = pending.trueEvents;
+  animator.clear();
+  timeline.appendResolution(state.turn, events, { labelOf: nodeLabel });
+  const notice = settledResolutionNotice(events);
+  hud.setNotice(notice.text, notice.tone);
+  renderPresentation(view);
+}
+
+function completeResolution(): void {
+  resolutionLocked = false;
+  renderIncidentControls();
+  if (state.status === 'playing' && !paused && !handoverActive && !ended) {
+    setInputsEnabled(true);
+    incidentControls.focusPrimary();
+  }
+}
+
+function settledResolutionNotice(
+  events: readonly ObservableTurnEvent[],
+): { text: string; tone: 'defence' | 'uncertainty' } {
   const overrides = events.filter(
     (event): event is Extract<ObservableTurnEvent, { kind: 'override' }> =>
       event.kind === 'override',
   );
-  hud.setNotice(
-    overrides.length > 0
-      ? `Business pressure returned ${overrides.map((event) => nodeLabel(event.node)).join(', ')} to service`
-      : '',
-  );
-  for (const event of overrides) {
-    board.flashOverride(event.node);
-    audio.play('override', { pan: panFor(event.node) });
-    shake.add(0.6);
+  if (overrides.length > 0) {
+    return {
+      text: `Business pressure returned ${overrides.map((event) => nodeLabel(event.node)).join(', ')} to service`,
+      tone: 'uncertainty',
+    };
   }
+  if (events.some((event) => event.kind === 'telemetry-gap')) {
+    return {
+      text: 'Telemetry uncertainty recorded. Reassess visible coverage.',
+      tone: 'uncertainty',
+    };
+  }
+  return { text: '', tone: 'defence' };
 }
 
 function canIssueLifecycleCommand(): boolean {
   return (
     !paused &&
     !handoverActive &&
-    !animator.isPlaying() &&
+    !resolutionLocked &&
     !ended &&
     state.status === 'playing'
   );
 }
 
-animator.onComplete(() => {
-  renderState();
-  if (state.status === 'playing' && !paused && !handoverActive) setInputsEnabled(true);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) director.interrupt();
 });
 
 // Board hotkeys: 'd' toggles the true-vs-visible debug table, 'f' toggles the
@@ -529,7 +633,7 @@ window.addEventListener('keydown', (event) => {
     briefMode ||
     paused ||
     handoverActive ||
-    animator.isPlaying() ||
+    resolutionLocked ||
     ended ||
     settingsPanel.isOpen()
   ) {
@@ -551,7 +655,7 @@ window.addEventListener('keydown', (event) => {
   if (event.key === 'f' || event.key === 'F') {
     const on = toggleThreatForecast();
     refreshForecast();
-    hud.setNotice(on ? 'Threat forecast on' : 'Threat forecast off');
+    hud.setNotice(on ? 'Threat forecast on' : 'Threat forecast off', 'defence');
   }
 });
 
@@ -599,7 +703,7 @@ if (briefMode) {
   const pauseMenu = createPauseMenu(mustFind('pause'), {
     onResume: () => {
       paused = false;
-      if (state.status === 'playing' && !animator.isPlaying()) setInputsEnabled(true);
+      if (state.status === 'playing' && !resolutionLocked) setInputsEnabled(true);
     },
     onSettings: () => settingsPanel.open(),
     onAbandon: () => {
@@ -687,6 +791,7 @@ function tick(): void {
   }
   context.controls.update();
   clampPan(context, topology);
+  director.tick(seconds);
   animator.update(seconds);
   board.tick(seconds); // pulse, encryption transitions, override flashes
   tickMaterials(seconds); // the pulses travelling along the cables
@@ -851,14 +956,12 @@ window.__sim = {
     return { ok: result.ok, reason: result.reason };
   },
   endTurnInstant(n: number) {
+    director.interrupt();
     for (let i = 0; i < n && state.status === 'playing'; i += 1) {
-      const turnNow = state.turn;
-      const resolved = endTurn(state, topology);
-      recorder.record(turnNow, resolved.events);
-      state = resolved.nextState;
-      recorder.tickDowntime(state);
+      const before = state;
+      const beforePresentation = toPresentationView(before, topology);
+      resolveHourly(before, beforePresentation, endTurn(before, topology), true);
     }
-    renderState();
   },
   logLength: () => recorder.log.length,
   pir: () =>

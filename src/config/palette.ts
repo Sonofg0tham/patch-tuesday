@@ -8,6 +8,7 @@ export const palette = {
   base: '#0b0e14', // near-black background, the war room in the dark
   accent: '#4cc9f0', // cold cyan: the defence, the UI, clean nodes
   infection: '#f72585', // hot magenta, reserved exclusively for the threat
+  pressure: '#f5a524', // amber: uncertainty, forecast risk and human pressure
   text: '#c5cdd8', // cool grey UI text
 
   // Derived tones for the board.

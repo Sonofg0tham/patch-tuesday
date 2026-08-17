@@ -17,6 +17,7 @@ describe('audio module', () => {
       'contain',
       'override',
       'handover',
+      'analysis',
     ]) {
       expect(SOUND_NAMES).toContain(name);
     }

@@ -34,7 +34,7 @@ describe('incident control model', () => {
 
   it('disables phase commands and exposes Skip while resolving', () => {
     expect(deriveIncidentControls({ phase: 'active' }, true, true)).toEqual([
-      { command: 'end-hour', label: 'End Hour', disabled: true, primary: true },
+      { command: 'end-hour', label: 'RESOLVING', disabled: true, primary: true },
       {
         command: 'declare-containment',
         label: 'Declare Containment',
