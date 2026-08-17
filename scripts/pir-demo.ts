@@ -3,7 +3,6 @@
 // sample reviews so every finding can be traced to the raw event log. The
 // command fails if any rating is absent. Run: npm run pir
 
-import { assembleTopology } from '../src/data/topology';
 import { generateTopology } from '../src/data/topology-gen';
 import { SIM_CONFIG } from '../src/sim/config';
 import { greedyBot, randomBot, runBotRecorded, type Bot } from '../src/sim/bots';
@@ -75,23 +74,28 @@ function format(hit: Hit): string {
 }
 
 function playLegalNearMiss(): Hit {
-  const topology = assembleTopology(
-    'NEAR MISS RECOVERY DRILL',
-    1,
-    [
-      { id: 'EDGE', label: 'EDGE', type: 'workstation', role: 'edge workstation', col: 0, row: 0, edr: true },
-      { id: 'MIDDLE', label: 'MIDDLE', type: 'workstation', role: 'workstation', col: 1, row: 0, edr: true },
-      { id: 'BACKUP', label: 'BACKUP', type: 'backup', role: 'backup repository', col: 2, row: 0, edr: true },
-    ],
-    [
-      ['EDGE', 'MIDDLE'],
-      ['MIDDLE', 'BACKUP'],
-    ],
-  );
   const seed = 'legal-near-miss';
+  const topology = generateTopology(seed);
+  if (topology.nodes.length !== 24) {
+    throw new Error(`NEAR MISS drill expected a 24-node estate, received ${topology.nodes.length}`);
+  }
+  if (topology.nodes.filter((node) => node.type === 'domain-controller').length !== 1) {
+    throw new Error('NEAR MISS drill expected one domain controller');
+  }
   const initial = createInitialState(topology, seed, SIM_CONFIG);
   if (infectedCount(initial) !== 3) {
     throw new Error(`NEAR MISS drill expected three infections, received ${infectedCount(initial)}`);
+  }
+  const patientZero = initial.patientZero;
+  if (!patientZero) throw new Error('NEAR MISS drill did not select patient zero');
+  const infectedIds = topology.nodes
+    .filter((node) => initial.nodes[node.id].state === 'infected')
+    .map((node) => node.id);
+  const isolatedIds = infectedIds
+    .filter((id) => id !== patientZero)
+    .sort((a, b) => a.localeCompare(b));
+  if (!infectedIds.includes(patientZero) || isolatedIds.length !== 2) {
+    throw new Error('NEAR MISS drill did not open with patient zero and two later infections');
   }
 
   const recorder = new RunRecorder();
@@ -112,20 +116,25 @@ function playLegalNearMiss(): Hit {
   };
 
   act({ kind: 'emergency' });
-  act({ kind: 'restore', node: 'EDGE' });
-  act({ kind: 'isolate', node: 'MIDDLE' });
-  act({ kind: 'isolate', node: 'BACKUP' });
+  act({ kind: 'restore', node: patientZero });
+  for (const id of isolatedIds) act({ kind: 'isolate', node: id });
   advance();
-  act({ kind: 'restore', node: 'MIDDLE' });
+  act({ kind: 'restore', node: isolatedIds[0] });
   advance();
-  act({ kind: 'restore', node: 'BACKUP' });
+  act({ kind: 'restore', node: isolatedIds[1] });
 
   const declarationTurn = state.turn;
   const declaration = declareContainment(state, topology, SIM_CONFIG);
+  if (
+    declaration.events.length !== 1 ||
+    declaration.events[0].kind !== 'containment-declaration' ||
+    !declaration.events[0].confirmed
+  ) {
+    throw new Error('NEAR MISS drill containment declaration was not confirmed');
+  }
   recorder.record(declarationTurn, declaration.events);
   state = declaration.nextState;
-  act({ kind: 'reconnect', node: 'MIDDLE' });
-  act({ kind: 'reconnect', node: 'BACKUP' });
+  for (const id of isolatedIds) act({ kind: 'reconnect', node: id });
 
   const filingTurn = state.turn;
   const filing = fileReview(state);
@@ -146,6 +155,9 @@ function playLegalNearMiss(): Hit {
   }
   if (record.log.some(({ event }) => event.kind === 'encrypted')) {
     throw new Error('NEAR MISS drill allowed post-detection encryption');
+  }
+  if (topology.nodes.some((node) => state.nodes[node.id].isolated === true)) {
+    throw new Error('NEAR MISS drill filed with an isolated node');
   }
 
   return {

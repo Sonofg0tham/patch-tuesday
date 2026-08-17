@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { generateTopology } from '../data/topology-gen';
 import { buildPir, ratingOf, RunRecorder, type LoggedEvent, type RunRecord } from './pir';
-import { SIM_CONFIG } from './config';
+import { GEN_CONFIG, SIM_CONFIG } from './config';
 import { makeGameState, makeTopology } from './fixtures';
 import {
   applyPlayerAction,
@@ -68,18 +69,43 @@ const ev = (turn: number, event: TurnEvent): LoggedEvent => ({ turn, event });
 
 describe('PIR ratings', () => {
   it('earns a NEAR MISS through legal containment and recovery from three infections', () => {
-    const legalTopology = makeTopology(
-      [
-        { id: 'EDGE', edr: true },
-        { id: 'MIDDLE', edr: true },
-        { id: 'BACKUP', type: 'backup', edr: true },
-      ],
-      [
-        ['EDGE', 'MIDDLE'],
-        ['MIDDLE', 'BACKUP'],
-      ],
-    );
-    const initial = createInitialState(legalTopology, 'legal-near-miss', SIM_CONFIG);
+    const seed = 'legal-near-miss';
+    const legalTopology = generateTopology(seed);
+    expect(GEN_CONFIG.nodeCount).toBe(24);
+    expect(legalTopology.nodes).toHaveLength(24);
+    expect(
+      legalTopology.nodes.filter((node) => node.type === 'domain-controller'),
+    ).toHaveLength(1);
+    expect(legalTopology.nodes.filter((node) => node.type === 'backup')).toHaveLength(1);
+    const routerCount = legalTopology.nodes.filter((node) => node.type === 'router').length;
+    expect(routerCount).toBeGreaterThanOrEqual(GEN_CONFIG.routers[0]);
+    expect(routerCount).toBeLessThanOrEqual(GEN_CONFIG.routers[1]);
+    const serverCount = legalTopology.nodes.filter((node) => node.type === 'server').length;
+    expect(serverCount).toBeGreaterThanOrEqual(GEN_CONFIG.servers[0]);
+    expect(serverCount).toBeLessThanOrEqual(GEN_CONFIG.servers[1]);
+    expect(legalTopology.cables).toHaveLength(legalTopology.nodes.length - 1);
+
+    const reachable = new Set<string>([legalTopology.nodes[0].id]);
+    const queue = [legalTopology.nodes[0].id];
+    while (queue.length > 0) {
+      const id = queue.shift() as string;
+      for (const neighbour of legalTopology.byId.get(id)?.neighbours ?? []) {
+        if (reachable.has(neighbour)) continue;
+        reachable.add(neighbour);
+        queue.push(neighbour);
+      }
+    }
+    expect(reachable.size).toBe(legalTopology.nodes.length);
+
+    const initial = createInitialState(legalTopology, seed, SIM_CONFIG);
+    const patientZero = initial.patientZero;
+    if (!patientZero) throw new Error('generated estate did not select patient zero');
+    const infectedIds = legalTopology.nodes
+      .filter((node) => initial.nodes[node.id].state === 'infected')
+      .map((node) => node.id);
+    const isolatedIds = infectedIds
+      .filter((id) => id !== patientZero)
+      .sort((a, b) => a.localeCompare(b));
     const recorder = new RunRecorder();
     let state = initial;
 
@@ -99,15 +125,16 @@ describe('PIR ratings', () => {
     };
 
     expect(infectedCount(state)).toBe(3);
+    expect(infectedIds).toContain(patientZero);
+    expect(isolatedIds).toHaveLength(2);
     act({ kind: 'emergency' });
-    act({ kind: 'restore', node: 'EDGE' });
-    act({ kind: 'isolate', node: 'MIDDLE' });
-    act({ kind: 'isolate', node: 'BACKUP' });
+    act({ kind: 'restore', node: patientZero });
+    for (const id of isolatedIds) act({ kind: 'isolate', node: id });
     advance();
 
-    act({ kind: 'restore', node: 'MIDDLE' });
+    act({ kind: 'restore', node: isolatedIds[0] });
     advance();
-    act({ kind: 'restore', node: 'BACKUP' });
+    act({ kind: 'restore', node: isolatedIds[1] });
 
     const declarationTurn = state.turn;
     const declaration = declareContainment(state, legalTopology, SIM_CONFIG);
@@ -115,8 +142,7 @@ describe('PIR ratings', () => {
     recorder.record(declarationTurn, declaration.events);
     state = declaration.nextState;
 
-    act({ kind: 'reconnect', node: 'MIDDLE' });
-    act({ kind: 'reconnect', node: 'BACKUP' });
+    for (const id of isolatedIds) act({ kind: 'reconnect', node: id });
     const filingTurn = state.turn;
     const filing = fileReview(state);
     recorder.record(filingTurn, filing.events);
@@ -147,6 +173,9 @@ describe('PIR ratings', () => {
           node.type !== 'workstation' && state.nodes[node.id].isolated === true,
       ),
     ).toBe(false);
+    expect(Object.values(state.nodes).some((node) => node.isolated === true)).toBe(
+      false,
+    );
     expect(pir.rating).toBe('NEAR MISS');
   });
 
