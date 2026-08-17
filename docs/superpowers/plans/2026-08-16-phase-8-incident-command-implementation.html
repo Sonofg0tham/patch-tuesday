@@ -739,7 +739,7 @@ Expected: FAIL because the timeline is missing and the forecast default is false
 
 Extend each `Scenario` with `handover: { alert: string; priorities: readonly [string, string] }`. Copy names only confirmed alerts and public response priorities. Coverage percentage, AP, backups and loss conditions are derived from topology and config at run time.
 
-`createHandover(container, callbacks)` exposes `show(model, { reducedMotion })` and `dismiss()`. It starts on a focused `Accept handover` button, then shows 03:12, observed alerts, monitored percentage, 2 AP, two backups and both loss conditions. Escape must not bypass the information; a visible Skip button may complete the staged presentation after acceptance. Reduced motion renders the complete copy immediately after acceptance with no staged text or camera request.
+`createHandover(container, callbacks)` exposes `show(model, { reducedMotion })` and `dismiss()`. It starts on a focused `Accept handover` button, then shows 03:12, observed alerts, monitored percentage, 2 AP, three backups and both loss conditions. Escape must not bypass the information; a visible Skip button may complete the staged presentation after acceptance. Reduced motion renders the complete copy immediately after acceptance with no staged text or camera request.
 
 Register a short synthesised `handover` pager in `audio.ts` using the existing oscillator and envelope path. The Accept callback calls `audio.unlock()` and `audio.play('handover')` synchronously in the same gesture. Keep the cue functional and conservative here; Task 10 owns the final phone layer, compressor routing and headphone mix.
 

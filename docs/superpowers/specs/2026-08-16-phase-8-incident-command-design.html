@@ -193,7 +193,7 @@
   <p>The run becomes a sequence of decisions with a visible beginning, escalation and close. The player can still move quickly when the board is understood. The design does not force empty observation turns.</p>
 
   <h3>Handover</h3>
-  <p>Beginning an incident opens a short, skippable handover. A synthesised pager sounds, the time reads 03:12, and the SOC summary reports only information available at detection: confirmed alerts, EDR coverage, 2 AP per hour, two backup credits, the Domain Controller loss condition and the 60% blast-radius loss line.</p>
+  <p>Beginning an incident opens a short, skippable handover. A synthesised pager sounds, the time reads 03:12, and the SOC summary reports only information available at detection: confirmed alerts, EDR coverage, 2 AP per hour, three backup credits, the Domain Controller loss condition and the 60% blast-radius loss line.</p>
   <p>The inherited dwell remains hidden until the PIR, preserving the existing reveal. Reduced motion shows the same information without staged text or camera movement.</p>
 
   <h3>Active response</h3>
@@ -209,6 +209,7 @@
 
   <h3>Recovery</h3>
   <p>The worm stops spreading. Only Reconnect and Restore are available. The player may spend remaining backup credits, reconnect isolated services and reduce final impact. A <strong>File review</strong> control is available immediately, so recovery never becomes compulsory clicking.</p>
+  <p>The first Phase 8 lock retained two backup credits. With dwell two and spread chance 1.00, a live estate reaches detection with at least three infections, so two restores made NEAR MISS structurally unreachable. The all-four-ratings acceptance check reopened only this dependency. Three credits now ship; AP, restore cost, threat tempo, pressure and loss rules remain unchanged.</p>
   <p><strong>Advance recovery hour</strong> discards unused AP, advances the clock and refreshes 2 AP. It never spreads or ages infection, but isolation ageing, downtime score, pressure and any pressure-driven business override still resolve. <strong>File review</strong> costs no AP and changes the run from playing to won.</p>
   <p>Filing while a router, server, backup node or Domain Controller remains isolated records an unrecovered critical-service finding. The severity is Medium for a router or server and High for a backup node or Domain Controller. A premature declaration is High. Either finding caps the rating at CONTAINED.</p>
   <p>The final rating is deterministic. A loss is TOTAL LOSS. A win with at least 25% final blast radius is REPORTABLE INCIDENT. A lower-blast-radius win is CONTAINED when any encryption happened after detection, containment was declared prematurely or a critical service remained isolated at filing. Only a win with none of those conditions is NEAR MISS.</p>
@@ -250,6 +251,9 @@
     </tbody>
   </table>
   <p>Filing sets the simulation status to won even when the final blast radius makes the incident reportable. Raw greedy survival therefore remains visible as a diagnostic, while the competent outcome gate measures won runs that finish below 25% blast radius. A blast radius of exactly 25% is reportable and does not count toward that gate.</p>
+  <h3>Backup-credit correction</h3>
+  <p>The superseded two-credit lock passed the pacing gate with raw greedy survival 97.30%, greedy sub-reportable containment 69.75%, random wins 27.82%, greedy and random finishes T+12.63h and T+14.86h, early finishes 0.00%, late runs 21.86%, undefended loss 100.00% and greedy high pressure 25.40%. It failed the separate rating-reachability acceptance condition because three live infections could not be eradicated with two restores.</p>
+  <p>The controller-authorised three-credit rerun used 4,000 greedy, 4,000 random-legal and 4,000 undefended seeds. It measured raw greedy survival 98.500%, greedy sub-reportable containment 63.450%, random wins 28.075%, greedy finish T+13.16925h, random finish T+15.014h, early finishes 0.000%, late runs 20.875%, undefended loss 100.000% and greedy high pressure 20.700%. Against two credits, the deltas were +1.200, -6.300 and +0.255 percentage points for the three outcome rates; +0.53925h and +0.154h for finish times; no movement in early finish or undefended loss; -0.985 percentage points for late runs; and -4.700 percentage points for high pressure. Every pacing band remains green, and a legal public-action response now earns NEAR MISS.</p>
   <p>Human acceptance is 12 to 18 minutes for a competent run. Bots measure decision hours, not wall time. The product gate assumes roughly 60 to 90 seconds of human thought plus a 1.4 to 4.5 second resolution beat per hour, then verifies the estimate through first-time and returning-player sessions.</p>
 
   <h2>6. Incident command interface</h2>

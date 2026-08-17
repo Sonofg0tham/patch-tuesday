@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { buildPir, ratingOf, type LoggedEvent, type RunRecord } from './pir';
+import { buildPir, ratingOf, RunRecorder, type LoggedEvent, type RunRecord } from './pir';
+import { SIM_CONFIG } from './config';
 import { makeGameState, makeTopology } from './fixtures';
-import type { GameState, NodeState, TurnEvent } from './types';
+import {
+  applyPlayerAction,
+  declareContainment,
+  endTurn,
+  fileReview,
+} from './game';
+import type { GameState, NodeState, PlayerAction, TurnEvent } from './types';
+import { blastRadius, createInitialState, encryptedCount, infectedCount } from './worm';
 
 // A small, controlled estate: 1 DC, 1 backup, 1 router, 1 server, 4 workstations
 // (8 nodes, so blast fractions are clean quarters).
@@ -59,6 +67,89 @@ function record(overrides: {
 const ev = (turn: number, event: TurnEvent): LoggedEvent => ({ turn, event });
 
 describe('PIR ratings', () => {
+  it('earns a NEAR MISS through legal containment and recovery from three infections', () => {
+    const legalTopology = makeTopology(
+      [
+        { id: 'EDGE', edr: true },
+        { id: 'MIDDLE', edr: true },
+        { id: 'BACKUP', type: 'backup', edr: true },
+      ],
+      [
+        ['EDGE', 'MIDDLE'],
+        ['MIDDLE', 'BACKUP'],
+      ],
+    );
+    const initial = createInitialState(legalTopology, 'legal-near-miss', SIM_CONFIG);
+    const recorder = new RunRecorder();
+    let state = initial;
+
+    const act = (action: PlayerAction): void => {
+      const turn = state.turn;
+      const result = applyPlayerAction(state, action, legalTopology, SIM_CONFIG);
+      expect(result.ok).toBe(true);
+      recorder.record(turn, result.events);
+      state = result.state;
+    };
+    const advance = (): void => {
+      const turn = state.turn;
+      const result = endTurn(state, legalTopology, SIM_CONFIG);
+      recorder.record(turn, result.events);
+      state = result.nextState;
+      recorder.tickDowntime(state);
+    };
+
+    expect(infectedCount(state)).toBe(3);
+    act({ kind: 'emergency' });
+    act({ kind: 'restore', node: 'EDGE' });
+    act({ kind: 'isolate', node: 'MIDDLE' });
+    act({ kind: 'isolate', node: 'BACKUP' });
+    advance();
+
+    act({ kind: 'restore', node: 'MIDDLE' });
+    advance();
+    act({ kind: 'restore', node: 'BACKUP' });
+
+    const declarationTurn = state.turn;
+    const declaration = declareContainment(state, legalTopology, SIM_CONFIG);
+    expect(declaration.events).toEqual([{ kind: 'containment-declaration', confirmed: true }]);
+    recorder.record(declarationTurn, declaration.events);
+    state = declaration.nextState;
+
+    act({ kind: 'reconnect', node: 'MIDDLE' });
+    act({ kind: 'reconnect', node: 'BACKUP' });
+    const filingTurn = state.turn;
+    const filing = fileReview(state);
+    recorder.record(filingTurn, filing.events);
+    state = filing.nextState;
+
+    const run: RunRecord = {
+      scenarioName: legalTopology.name,
+      seed: initial.seed,
+      initial,
+      final: state,
+      log: recorder.log,
+      downtimeHours: recorder.downtimeHours,
+    };
+    const pir = buildPir(run, legalTopology, SIM_CONFIG);
+
+    expect(state.status).toBe('won');
+    expect(blastRadius(state)).toBeLessThan(0.25);
+    expect(encryptedCount(state)).toBe(0);
+    expect(recorder.log.some(({ event }) => event.kind === 'encrypted')).toBe(false);
+    expect(
+      recorder.log.some(
+        ({ event }) => event.kind === 'containment-declaration' && !event.confirmed,
+      ),
+    ).toBe(false);
+    expect(
+      legalTopology.nodes.some(
+        (node) =>
+          node.type !== 'workstation' && state.nodes[node.id].isolated === true,
+      ),
+    ).toBe(false);
+    expect(pir.rating).toBe('NEAR MISS');
+  });
+
   it('gives TOTAL LOSS precedence over the reportable threshold', () => {
     const final = makeGameState(nodesWith(['WS-1', 'WS-2']), {
       status: 'lost',
@@ -346,7 +437,7 @@ describe('PIR metrics', () => {
     expect(metric('Recovery duration')).toBe('2 hours');
     expect(metric('Impact')).toBe('42');
     expect(metric('Downtime')).toContain('9 host-hours');
-    expect(metric('Backup credits burned')).toBe('2 of 2');
+    expect(metric('Backup credits burned')).toBe('3 of 3');
     expect(metric('Business overrides')).toContain('T+04h');
     expect(metric('Emergency change control')).toContain('BYPASSED at T+03h');
   });
