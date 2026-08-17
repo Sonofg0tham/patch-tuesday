@@ -18,31 +18,39 @@
 import * as THREE from 'three';
 import { palette } from '../config/palette';
 import { VISUAL_CONFIG } from '../config/visual';
-import { effectivePulseScale, motionReduced } from '../data/settings';
+import { motionReduced } from '../data/settings';
 import type { NodeType, Topology, TopologyNode } from '../data/topology';
 import { NODE_TYPES } from '../data/topology';
+import type { PresentationView } from '../sim/telemetry';
 import type { VisibleState } from '../sim/types';
 import {
   buildEdrMarkerGeometry,
-  buildForecastRingGeometry,
   buildNodeGeometries,
   buildOutlineGeometries,
   nodeTopHeight,
 } from './geometry';
 import {
   EMISSIVE_ATTRIBUTE,
+  HEALTHY_CABLE_EMISSIVE,
   createCableMaterial,
   createChassisMaterial,
   type CableMaterial,
 } from './materials';
 import { haloTexture } from './textures';
+import { infectionPulseScale, StateMarkerLayer } from './state-markers';
 
-const COLOUR_BASE = new THREE.Color(palette.nodeBase);
+export const BOARD_SIGNAL_COLOURS = {
+  clean: palette.nodeBase,
+  unknown: '#62676d',
+} as const;
+
+const COLOUR_BASE = new THREE.Color(BOARD_SIGNAL_COLOURS.clean);
+const COLOUR_UNKNOWN = new THREE.Color(BOARD_SIGNAL_COLOURS.unknown);
 const COLOUR_HIGHLIGHT = new THREE.Color(palette.nodeHover);
 const COLOUR_SELECTED = new THREE.Color(palette.nodeSelected);
 const COLOUR_INFECTION = new THREE.Color(palette.infection); // magenta, the threat
 const COLOUR_ENCRYPTED = new THREE.Color('#180a14'); // gone dark, magenta-tinted
-const COLOUR_PATCHED = new THREE.Color('#8ff0d4'); // immune, a brighter defended cyan
+const COLOUR_PATCHED = new THREE.Color('#315d59'); // defended, but quieter than selection
 const COLOUR_GLOW = new THREE.Color(palette.accent); // cyan infrastructure glow
 const COLOUR_AMBER = new THREE.Color('#f5a524'); // business-pressure warning
 
@@ -59,12 +67,19 @@ const ENCRYPT_TRANSITION = 0.5; // seconds for a node to die and its edges to ig
 // enough that a healthy node reads as lit metal rather than a lamp, which is
 // what leaves the magenta room to be alarming: if everything glows, nothing
 // does, and the threat colour stops meaning anything.
-const GLOW_CLEAN = 0.04;
+export const BOARD_SIGNAL_LEVELS = {
+  healthyCable: HEALTHY_CABLE_EMISSIVE,
+  edr: 0.1,
+  selection: 0.3,
+  compromise: 0.85,
+} as const;
+
+const GLOW_CLEAN = 0.035;
 const GLOW_HOVER = 0.16;
-const GLOW_SELECTED = 0.28;
-const GLOW_INFECTED = 0.85;
+const GLOW_SELECTED = BOARD_SIGNAL_LEVELS.selection;
+const GLOW_INFECTED = BOARD_SIGNAL_LEVELS.compromise;
 const GLOW_ENCRYPTED = 0.02;
-const GLOW_PATCHED = 0.3;
+const GLOW_PATCHED = 0.025;
 
 // Texture tiling per type, so a tall rack does not wear the same stretched
 // panel as a flat puck. Roughly one panel repeat per world unit of surface.
@@ -89,21 +104,12 @@ export interface Board {
   setSelected(nodeId: string | null): void;
   /** Set one node's visible state. animate=true runs the encryption transition. */
   setVisibleState(nodeId: string, state: VisibleState, animate?: boolean): void;
-  /** Apply a whole visible view at once (normal play) or true view (debug). */
-  applyView(view: Record<string, VisibleState>): void;
-  /** Cut or restore a node's cables to show isolation. */
-  setIsolated(nodeId: string, isolated: boolean): void;
-  /** Show or hide the EDR ring a deployed sensor adds to a node. */
-  setSensor(nodeId: string, on: boolean): void;
+  /** Apply the complete fog-safe public board projection. */
+  applyPresentation(view: PresentationView): void;
   /** Global business pressure (0..1): isolation rings warm towards amber. */
   setPressure(fraction: number): void;
   /** A business override just force-reconnected this node: flash it. */
   flashOverride(nodeId: string): void;
-  /**
-   * Nodes the worm could reach next turn, from what the player can see. Pass an
-   * empty array to clear. Purely a readability aid; the sim never reads this.
-   */
-  setForecast(nodeIds: readonly string[]): void;
   /** Per-frame presentation: pulse, encryption transitions, flashes. */
   tick(elapsed: number): void;
 }
@@ -124,6 +130,8 @@ export function createBoard(topology: Topology, environment: THREE.Texture | nul
   const group = new THREE.Group();
   const geometries = buildNodeGeometries();
   const glow = VISUAL_CONFIG.glowIntensity;
+  const markerLayer = new StateMarkerLayer(topology, { reducedMotion: motionReduced() });
+  group.add(markerLayer.group);
 
   const meshByType = new Map<NodeType, THREE.InstancedMesh>();
   const glowByType = new Map<NodeType, THREE.InstancedBufferAttribute>();
@@ -226,37 +234,22 @@ export function createBoard(topology: Topology, environment: THREE.Texture | nul
   const sensorMaterial = new THREE.MeshStandardMaterial({
     color: palette.accent,
     emissive: palette.accent,
-    emissiveIntensity: 0.35,
+    emissiveIntensity: BOARD_SIGNAL_LEVELS.edr,
     roughness: 0.35,
     metalness: 0.6,
     envMap: environment,
   });
   const sensorRings = new Map<string, THREE.Mesh>();
 
-  // Threat forecast rings: a broken ring at the base of every node the worm
-  // could reach next turn. Magenta, because this is the threat's reach and
-  // magenta belongs to the threat, but broken rather than solid so it can never
-  // be mistaken for a node that is actually compromised. Off unless the player
-  // turns the assist on.
-  const forecastGeometry = buildForecastRingGeometry();
-  const forecastMaterial = new THREE.MeshStandardMaterial({
-    color: palette.infection,
-    emissive: palette.infection,
-    emissiveIntensity: 0.5 * glow,
-    roughness: 0.4,
-    metalness: 0.3,
-    transparent: true,
-    opacity: 0.85,
-  });
-  const forecastRings = new Map<string, THREE.Mesh>();
-
   // Node state: infection (visible) plus transient hover/selection and the
   // in-flight encryption transitions and override flashes.
   const visibleById = new Map<string, VisibleState>();
+  const observedById = new Map<string, boolean>();
   const encTransitions = new Map<string, EncTransition>();
   const overrideFlashes = new Map<string, number>(); // nodeId -> start elapsed
   let highlightedId: string | null = null;
   let selectedId: string | null = null;
+  let latestPresentation: PresentationView = { nodes: {} };
 
   // Fill colour: infection outranks selection and hover so the threat colour is
   // never lost to a cursor. Patched sits with the state colours.
@@ -267,6 +260,7 @@ export function createBoard(topology: Topology, environment: THREE.Texture | nul
     if (visible === 'patched') return COLOUR_PATCHED;
     if (nodeId === selectedId) return COLOUR_SELECTED;
     if (nodeId === highlightedId) return COLOUR_HIGHLIGHT;
+    if (observedById.get(nodeId) === false) return COLOUR_UNKNOWN;
     return COLOUR_BASE;
   }
 
@@ -278,6 +272,7 @@ export function createBoard(topology: Topology, environment: THREE.Texture | nul
     if (visible === 'patched') return GLOW_PATCHED;
     if (nodeId === selectedId) return GLOW_SELECTED;
     if (nodeId === highlightedId) return GLOW_HOVER;
+    if (observedById.get(nodeId) === false) return 0.012;
     return GLOW_CLEAN;
   }
 
@@ -300,6 +295,7 @@ export function createBoard(topology: Topology, environment: THREE.Texture | nul
     if (visible === 'patched') return { colour: COLOUR_PATCHED, opacity: 0.18 * glow };
     if (nodeId === selectedId) return { colour: COLOUR_SELECTED, opacity: 0.26 * glow };
     if (nodeId === highlightedId) return { colour: COLOUR_GLOW, opacity: 0.22 * glow };
+    if (observedById.get(nodeId) === false) return { colour: COLOUR_UNKNOWN, opacity: 0.025 * glow };
     return { colour: COLOUR_GLOW, opacity: 0.06 * glow };
   }
 
@@ -434,17 +430,13 @@ export function createBoard(topology: Topology, environment: THREE.Texture | nul
     for (const record of cablesByNode.get(nodeId) ?? []) refreshCableLook(record);
   }
 
-  // Motion is a required state cue, so the pulse survives every level, just
-  // gentler as it drops. The encryption punch is optional juice, off when the
-  // player asked for reduced motion.
-  const pulseAmp = VISUAL_CONFIG.pulseAmplitude * effectivePulseScale();
-  const impact = motionReduced() ? 0 : VISUAL_CONFIG.encryptImpactScale;
-
   function tick(elapsed: number): void {
-    // Infected pulse: the surface of a visibly infected node breathes, and its
-    // halo breathes with it. Motion is a required state cue, so it survives
-    // reduced motion, just gentler.
-    const pulse = 1 + pulseAmp * 0.5 * (1 + Math.sin(elapsed * VISUAL_CONFIG.pulseSpeed * Math.PI));
+    // The physical threat plate now carries infection in a still frame.
+    // Reduced motion can therefore hold both the plate and surface steady.
+    const reduced = motionReduced();
+    const pulse = infectionPulseScale(elapsed * VISUAL_CONFIG.pulseSpeed, reduced);
+    markerLayer.setReducedMotion(reduced);
+    markerLayer.tick(elapsed);
     for (const [nodeId, state] of visibleById) {
       if (state !== 'infected' || encTransitions.has(nodeId)) continue;
       setInstanceGlow(nodeId, GLOW_INFECTED * pulse);
@@ -473,6 +465,7 @@ export function createBoard(topology: Topology, environment: THREE.Texture | nul
         (sprite.material as THREE.SpriteMaterial).opacity = settle + 0.7 * glow * flare;
       }
       // Scale punch: a quick dip and recover.
+      const impact = reduced ? 0 : VISUAL_CONFIG.encryptImpactScale;
       setInstanceScale(nodeId, 1 - impact * Math.sin(p * Math.PI));
       if (p >= 1) {
         setInstanceColour(nodeId, COLOUR_ENCRYPTED);
@@ -482,14 +475,6 @@ export function createBoard(topology: Topology, environment: THREE.Texture | nul
         encTransitions.delete(nodeId);
         applyHalo(nodeId);
       }
-    }
-
-    // Forecast rings turn slowly, the way a targeting reticle does, so they
-    // read as live rather than as scenery. At reduced motion they hold still
-    // and the broken-ring shape carries the cue on its own.
-    if (forecastRings.size > 0 && !motionReduced()) {
-      const spin = elapsed * 0.3;
-      for (const ring of forecastRings.values()) ring.rotation.y = spin;
     }
 
     // Override flashes: a bright cyan burst on a force-reconnected node.
@@ -531,31 +516,21 @@ export function createBoard(topology: Topology, environment: THREE.Texture | nul
       selectedId = nodeId;
       repaint(previous);
       repaint(selectedId);
+      markerLayer.apply(latestPresentation, selectedId);
     },
     setVisibleState,
-    applyView(view) {
-      for (const [nodeId, state] of Object.entries(view)) setVisibleState(nodeId, state, false);
-    },
-    setIsolated(nodeId, isolated) {
-      if (isolated) isolatedSet.add(nodeId);
-      else isolatedSet.delete(nodeId);
-      for (const record of cablesByNode.get(nodeId) ?? []) refreshCableVisibility(record);
-      updateIsolationRing(nodeId);
-    },
-    setSensor(nodeId, on) {
-      const has = sensorRings.has(nodeId);
-      if (on && !has) {
-        const node = topology.byId.get(nodeId);
-        if (!node) return;
-        const ring = new THREE.Mesh(sensorGeometry, sensorMaterial);
-        ring.position.set(node.x, nodeTopHeight(node.type) + MARKER_GAP, node.z);
-        sensorRings.set(nodeId, ring);
-        group.add(ring);
-      } else if (!on && has) {
-        const ring = sensorRings.get(nodeId);
-        if (ring) group.remove(ring);
-        sensorRings.delete(nodeId);
+    applyPresentation(view) {
+      latestPresentation = view;
+      for (const node of topology.nodes) {
+        const presentation = view.nodes[node.id];
+        if (!presentation) continue;
+        observedById.set(node.id, presentation.observed);
+        setVisibleState(node.id, presentation.visibleState, false);
+        repaint(node.id);
+        setNodeIsolated(node.id, presentation.isolated);
+        setNodeSensor(node.id, presentation.edr && !node.edr);
       }
+      markerLayer.apply(view, selectedId);
     },
     setPressure(fraction) {
       pressureFraction = THREE.MathUtils.clamp(fraction, 0, 1);
@@ -565,25 +540,31 @@ export function createBoard(topology: Topology, environment: THREE.Texture | nul
       // The flash clock matches tick's elapsed (performance.now() / 1000).
       overrideFlashes.set(nodeId, performance.now() / 1000);
     },
-    setForecast(nodeIds) {
-      const wanted = new Set(nodeIds);
-      for (const [nodeId, ring] of [...forecastRings]) {
-        if (wanted.has(nodeId)) continue;
-        group.remove(ring);
-        forecastRings.delete(nodeId);
-      }
-      for (const nodeId of wanted) {
-        if (forecastRings.has(nodeId)) continue;
-        const node = topology.byId.get(nodeId);
-        if (!node) continue;
-        const ring = new THREE.Mesh(forecastGeometry, forecastMaterial);
-        ring.position.set(node.x, 0.05, node.z);
-        forecastRings.set(nodeId, ring);
-        group.add(ring);
-      }
-    },
     tick,
   };
+
+  function setNodeIsolated(nodeId: string, isolated: boolean): void {
+    if (isolated) isolatedSet.add(nodeId);
+    else isolatedSet.delete(nodeId);
+    for (const record of cablesByNode.get(nodeId) ?? []) refreshCableVisibility(record);
+    updateIsolationRing(nodeId);
+  }
+
+  function setNodeSensor(nodeId: string, on: boolean): void {
+    const has = sensorRings.has(nodeId);
+    if (on && !has) {
+      const node = topology.byId.get(nodeId);
+      if (!node) return;
+      const ring = new THREE.Mesh(sensorGeometry, sensorMaterial);
+      ring.position.set(node.x, nodeTopHeight(node.type) + MARKER_GAP, node.z);
+      sensorRings.set(nodeId, ring);
+      group.add(ring);
+    } else if (!on && has) {
+      const ring = sensorRings.get(nodeId);
+      if (ring) group.remove(ring);
+      sensorRings.delete(nodeId);
+    }
+  }
 
   function tintIsolationRing(nodeId: string): void {
     const ring = isolationRings.get(nodeId);
@@ -647,7 +628,7 @@ function buildEdrMarkers(topology: Topology): THREE.InstancedMesh {
   const material = new THREE.MeshStandardMaterial({
     color: palette.accent,
     emissive: palette.accent,
-    emissiveIntensity: 0.35,
+    emissiveIntensity: BOARD_SIGNAL_LEVELS.edr,
     roughness: 0.35,
     metalness: 0.6,
   });

@@ -16,7 +16,7 @@
 import * as THREE from 'three';
 import { palette } from '../config/palette';
 import { VISUAL_CONFIG } from '../config/visual';
-import { effectiveVisibilityFloor } from '../data/settings';
+import { effectiveVisibilityFloor, motionReduced } from '../data/settings';
 import { cableSurface, floorSurface, panelSurface, tiled } from './textures';
 
 // Uniform sets that need a clock ticked every frame.
@@ -31,7 +31,12 @@ const uniformsByMaterial = new WeakMap<THREE.Material, Record<string, THREE.IUni
 
 /** Advances every flow animation. Called once per frame from the main loop. */
 export function tickMaterials(elapsed: number): void {
-  for (const uniforms of animated) uniforms.uTime.value = elapsed;
+  const animationTime = cableAnimationTime(elapsed, motionReduced());
+  for (const uniforms of animated) uniforms.uTime.value = animationTime;
+}
+
+export function cableAnimationTime(elapsed: number, reducedMotion: boolean): number {
+  return reducedMotion ? 0 : elapsed;
 }
 
 function capture(material: THREE.Material, uniforms: Record<string, THREE.IUniform>): void {
@@ -160,6 +165,9 @@ export interface CableMaterial {
   setFlowStrength(strength: number): void;
 }
 
+export const HEALTHY_CABLE_EMISSIVE = 0.035;
+const HEALTHY_CABLE_FLOW = 0.3;
+
 export function createCableMaterial(
   environment: THREE.Texture | null,
   length: number,
@@ -171,7 +179,7 @@ export function createCableMaterial(
   const material = new THREE.MeshStandardMaterial({
     color: palette.accent,
     emissive: palette.accent,
-    emissiveIntensity: 0.1 * VISUAL_CONFIG.glowIntensity,
+    emissiveIntensity: HEALTHY_CABLE_EMISSIVE * VISUAL_CONFIG.glowIntensity,
     roughness: 0.45,
     metalness: 0.55,
     normalMap: maps.normalMap,
@@ -185,7 +193,7 @@ export function createCableMaterial(
     uTime: { value: 0 },
     uFlowSpeed: { value: VISUAL_CONFIG.cableFlowSpeed },
     uFlowLength: { value: Math.max(1, length) },
-    uFlowStrength: { value: 0.7 * VISUAL_CONFIG.glowIntensity },
+    uFlowStrength: { value: HEALTHY_CABLE_FLOW * VISUAL_CONFIG.glowIntensity },
     uFlowColour: { value: new THREE.Color(palette.accent) },
   };
 
@@ -239,13 +247,13 @@ export function createCableMaterial(
       material.color.set(colour);
       material.emissive.set(colour);
       material.emissiveIntensity =
-        (compromised ? 0.42 : 0.1) * VISUAL_CONFIG.glowIntensity;
+        (compromised ? 0.42 : HEALTHY_CABLE_EMISSIVE) * VISUAL_CONFIG.glowIntensity;
       const uniforms = uniformsOf(material) ?? injected;
       (uniforms.uFlowColour.value as THREE.Color).set(colour);
       // The worm travels faster and hits harder than routine traffic does.
       uniforms.uFlowSpeed.value = VISUAL_CONFIG.cableFlowSpeed * (compromised ? 2.1 : 1);
       uniforms.uFlowStrength.value =
-        (compromised ? 1.5 : 0.7) * VISUAL_CONFIG.glowIntensity;
+        (compromised ? 1.5 : HEALTHY_CABLE_FLOW) * VISUAL_CONFIG.glowIntensity;
     },
     setFlowStrength(strength) {
       const uniforms = uniformsOf(material) ?? injected;

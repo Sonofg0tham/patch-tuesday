@@ -11,6 +11,7 @@
 // repeat across the ground plane without a visible seam.
 
 import * as THREE from 'three';
+import { palette } from '../config/palette';
 
 // Anisotropic filtering level, set once from the renderer's real capability.
 // The floor is seen at a very grazing angle across most of the frame, which is
@@ -459,6 +460,188 @@ export function moteTexture(): THREE.Texture {
   ctx.fillRect(0, 0, size, size);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+// --- Incident-command overlays ---
+
+export type MarkerGlyph = 'infection' | 'unknown' | 'patched';
+
+/**
+ * Paints one state plate. The silhouette and internal cut are different for
+ * every state, so post-processing and colour are supporting cues rather than
+ * the only language on the board.
+ */
+export function markerGlyphTexture(kind: MarkerGlyph): THREE.Texture {
+  return paintedTexture(128, 128, (ctx) => {
+    ctx.clearRect(0, 0, 128, 128);
+    ctx.lineCap = 'square';
+    ctx.lineJoin = 'miter';
+
+    if (kind === 'infection') {
+      ctx.fillStyle = 'rgba(11, 14, 20, 0.94)';
+      ctx.strokeStyle = palette.infection;
+      ctx.lineWidth = 9;
+      ctx.beginPath();
+      ctx.moveTo(40, 10);
+      ctx.lineTo(88, 10);
+      ctx.lineTo(118, 40);
+      ctx.lineTo(118, 88);
+      ctx.lineTo(88, 118);
+      ctx.lineTo(40, 118);
+      ctx.lineTo(10, 88);
+      ctx.lineTo(10, 40);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      // A forked propagation mark, readable without depending on colour.
+      ctx.strokeStyle = '#f4f8fb';
+      ctx.lineWidth = 10;
+      ctx.beginPath();
+      ctx.moveTo(34, 34);
+      ctx.lineTo(64, 64);
+      ctx.lineTo(94, 34);
+      ctx.moveTo(64, 64);
+      ctx.lineTo(64, 96);
+      ctx.stroke();
+      return;
+    }
+
+    if (kind === 'unknown') {
+      ctx.fillStyle = 'rgba(11, 14, 20, 0.9)';
+      ctx.strokeStyle = palette.pressure;
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.moveTo(64, 8);
+      ctx.lineTo(120, 64);
+      ctx.lineTo(64, 120);
+      ctx.lineTo(8, 64);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      // Two broken telemetry bars make this a blind marker, not a warning dot.
+      ctx.strokeStyle = '#f4f8fb';
+      ctx.lineWidth = 9;
+      ctx.beginPath();
+      ctx.moveTo(35, 50);
+      ctx.lineTo(55, 50);
+      ctx.moveTo(73, 50);
+      ctx.lineTo(93, 50);
+      ctx.moveTo(45, 77);
+      ctx.lineTo(83, 77);
+      ctx.stroke();
+      return;
+    }
+
+    ctx.fillStyle = 'rgba(11, 14, 20, 0.92)';
+    ctx.strokeStyle = '#5e9bab';
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(64, 8);
+    ctx.lineTo(108, 26);
+    ctx.lineTo(103, 83);
+    ctx.quadraticCurveTo(94, 108, 64, 120);
+    ctx.quadraticCurveTo(34, 108, 25, 83);
+    ctx.lineTo(20, 26);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = '#b7c8ce';
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.moveTo(37, 65);
+    ctx.lineTo(56, 84);
+    ctx.lineTo(92, 43);
+    ctx.stroke();
+  });
+}
+
+/** Paints a short, sanitised asset label into a billboard texture. */
+export function assetLabelTexture(label: string): THREE.Texture {
+  return paintedTexture(256, 64, (ctx) => {
+    ctx.clearRect(0, 0, 256, 64);
+    ctx.fillStyle = 'rgba(8, 17, 24, 0.94)';
+    ctx.strokeStyle = palette.accent;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(12, 3);
+    ctx.lineTo(244, 3);
+    ctx.lineTo(253, 12);
+    ctx.lineTo(253, 52);
+    ctx.lineTo(244, 61);
+    ctx.lineTo(12, 61);
+    ctx.lineTo(3, 52);
+    ctx.lineTo(3, 12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#e8f6fc';
+    ctx.font = '500 25px "Fira Code", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, 128, 33, 224);
+  });
+}
+
+/** Paints a quiet evidence-zone stencil for the floor. */
+export function zoneStencilTexture(segment: string): THREE.Texture {
+  return paintedTexture(512, 256, (ctx) => {
+    ctx.clearRect(0, 0, 512, 256);
+    ctx.strokeStyle = 'rgba(76, 201, 240, 0.62)';
+    ctx.fillStyle = 'rgba(76, 201, 240, 0.72)';
+    ctx.lineWidth = 4;
+    const corner = 64;
+    for (const [x, y, sx, sy] of [
+      [12, 12, 1, 1],
+      [500, 12, -1, 1],
+      [12, 244, 1, -1],
+      [500, 244, -1, -1],
+    ] as const) {
+      ctx.beginPath();
+      ctx.moveTo(x + sx * corner, y);
+      ctx.lineTo(x, y);
+      ctx.lineTo(x, y + sy * corner);
+      ctx.stroke();
+    }
+    ctx.font = '500 23px "Fira Code", monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(`// ZONE ${segment}`, 28, 228, 280);
+    // Registration ticks make the area read as a measured tabletop stencil.
+    for (let x = 330; x <= 476; x += 28) ctx.fillRect(x, 218, 12, 3);
+  });
+}
+
+function paintedTexture(
+  width: number,
+  height: number,
+  paint: (ctx: CanvasRenderingContext2D) => void,
+): THREE.Texture {
+  // Unit tests run without a DOM. The layer still constructs real Three.js
+  // objects there; a one-pixel opaque sample stands in for browser canvas ink.
+  if (typeof document === 'undefined') {
+    const texture = new THREE.DataTexture(
+      new Uint8Array([255, 255, 255, 255]),
+      1,
+      1,
+      THREE.RGBAFormat,
+    );
+    texture.needsUpdate = true;
+    return texture;
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('2d canvas context unavailable');
+  paint(ctx);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = true;
   texture.needsUpdate = true;
   return texture;
 }

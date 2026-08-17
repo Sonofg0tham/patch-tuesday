@@ -186,7 +186,7 @@ export function createSettingsPanel(container: HTMLElement, options: Options): S
       ['full', 'calm', 'reduced'] as const,
       MOTION_LABELS,
       s.motionLevel,
-      'Reduced turns off shake, grain and drifting dust, and eases the pulse. State cues stay.',
+      'Reduced turns off shake, grain, drift and travelling pulses. State cues stay.',
       (motionLevel) => ({ motionLevel }),
     );
 

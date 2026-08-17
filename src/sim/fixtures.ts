@@ -45,6 +45,7 @@ export function makeTopology(specs: NodeSpec[], cablePairs: [string, string][]):
     label: spec.id,
     type: spec.type ?? 'workstation',
     role: 'test node',
+    segment: 'TEST',
     col: index,
     row: 0,
     edr: spec.edr ?? false,

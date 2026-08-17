@@ -36,6 +36,7 @@ import { createPostFx } from './render/postfx';
 import { tickMaterials } from './render/materials';
 import { createPointerPicker } from './render/picking';
 import { createSpreadAnimator } from './render/spread-animation';
+import { ActionEffectPool } from './render/action-effects';
 import { createTurnDirector, TURN_DIRECTOR_TIMING } from './render/turn-director';
 import { ForecastRouteLayer } from './render/forecast-routes';
 import { createOverlay } from './ui/overlay';
@@ -57,6 +58,7 @@ import { createInitialState, blastRadius, encryptedCount } from './sim/worm';
 import {
   projectTurnEvents,
   toPresentationView,
+  type NodePresentationState,
   type ObservableTurnEvent,
   type PresentationView,
 } from './sim/telemetry';
@@ -110,6 +112,8 @@ const rosterContainer = mustFind('roster');
 const debug = createDebug(mustFind('debug'));
 const pirScreen = createPirScreen(mustFind('pir'));
 const animator = createSpreadAnimator(board, topology);
+const actionEffects = new ActionEffectPool(topology, { reducedMotion: motionReduced() });
+context.scene.add(actionEffects.group);
 const resolutionStage = createResolutionStage(mustFind('resolution-stage'));
 const audio = createAudio();
 const shake = createScreenShake();
@@ -283,13 +287,7 @@ function renderPresentation(
   if (options.animateEncryptionNode) {
     board.setVisibleState(options.animateEncryptionNode, 'encrypted', !motionReduced());
   }
-  board.applyView(currentView);
-  for (const node of topology.nodes) {
-    const presentation = currentPresentation.nodes[node.id];
-    board.setIsolated(node.id, presentation?.isolated ?? false);
-    // A sensor ring only for coverage the player added, not built-in EDR.
-    board.setSensor(node.id, Boolean(presentation?.edr) && !node.edr);
-  }
+  board.applyPresentation(currentPresentation);
   renderHud();
   refreshForecast();
   roster.setActive(selectedId);
@@ -390,6 +388,10 @@ function act(kind: ActionKind): void {
     recorder.record(before.turn, result.events);
     const observable = projectTurnEvents(result.events, before, result.state, topology);
     timeline.appendResolution(result.state.turn, observable, { labelOf: nodeLabel });
+    const applied = result.events.find(
+      (event) => event.kind === 'action' && event.outcome === 'applied',
+    );
+    if (applied?.kind === 'action') actionEffects.play(applied.action, applied.node);
   }
   state = result.state;
   actionBar.setReason(result.ok ? (result.reason ?? '') : (result.reason ?? ''), result.ok);
@@ -697,6 +699,7 @@ const settingsPanel = createSettingsPanel(mustFind('settings'), {
     audio.setMasterVolume(s.masterVolume);
     audio.setMusicVolume(s.musicVolume);
     audio.setSfxVolume(s.sfxVolume);
+    actionEffects.setReducedMotion(motionReduced());
     postfx.setFilmAmount(motionReduced() ? 0 : effectivePulseScale());
     refreshForecast();
     renderSituation();
@@ -814,6 +817,7 @@ function tick(): void {
   clampPan(context, topology);
   director.tick(seconds);
   animator.update(seconds);
+  actionEffects.tick(seconds);
   board.tick(seconds); // pulse, encryption transitions, override flashes
   tickMaterials(seconds); // the pulses travelling along the cables
   context.tickAtmosphere(seconds); // the dust in the light
@@ -921,6 +925,9 @@ declare global {
       visibleView: () => Record<string, VisibleState>;
       act: (kind: ActionKind, node?: string) => { ok: boolean; reason?: string };
       endTurnInstant: (n: number) => void;
+      visualProof?: () => Record<string, string>;
+      playEffectProof?: (kind: ActionKind, node?: string) => boolean;
+      effectProofState?: () => Record<ActionKind, boolean>;
       /** The log length and the built review, for verifying findings match events. */
       logLength: () => number;
       pir: () => ReturnType<typeof buildPir>;
@@ -936,6 +943,7 @@ window.__spikeBench = (benchFrames = 120) => {
     // (pulse, transitions, flashes), the shake sample, and the render. This is
     // the honest frame cost, not just the draw call.
     board.tick(now / 1000);
+    actionEffects.tick(now / 1000);
     tickMaterials(now / 1000);
     context.tickAtmosphere(now / 1000);
     const offset = shake.step(0.016);
@@ -971,7 +979,13 @@ window.__sim = {
   visibleView: () => ({ ...currentView }),
   act(kind, node) {
     const result = applyPlayerAction(state, { kind, node }, topology);
-    if (result.ok) recorder.record(state.turn, result.events);
+    if (result.ok) {
+      recorder.record(state.turn, result.events);
+      const applied = result.events.find(
+        (event) => event.kind === 'action' && event.outcome === 'applied',
+      );
+      if (applied?.kind === 'action') actionEffects.play(applied.action, applied.node);
+    }
     state = result.state;
     renderState();
     return { ok: result.ok, reason: result.reason };
@@ -998,3 +1012,98 @@ window.__sim = {
       topology,
     ),
 };
+
+// Explicit visual-verification surface. Development builds expose public
+// presentation fixtures and pooled action effects without mutating true game
+// state. The production build omits both methods unless ?debug=1 is explicit.
+if (
+  params.get('debug') === '1' ||
+  window.location.hostname === '127.0.0.1' ||
+  window.location.hostname === 'localhost'
+) {
+  window.__sim.visualProof = () => {
+    const required = [
+      'DC-01',
+      'FIN-SW',
+      'SRV-MAIL',
+      'SRV-SQL',
+      'SRV-APP',
+      'SRV-WEB',
+      'SRV-FILE',
+    ];
+    for (const nodeId of required) {
+      if (!currentPresentation.nodes[nodeId]) {
+        throw new Error(`visual proof fixture requires ${nodeId}`);
+      }
+    }
+    const nodes: Record<string, NodePresentationState> = Object.fromEntries(
+      Object.entries(currentPresentation.nodes).map(
+        ([id, node]): [string, NodePresentationState] => [
+          id,
+          {
+            ...node,
+            visibleState: 'clean',
+            observed: true,
+            isolated: false,
+            turnsToEncryption: undefined,
+          },
+        ],
+      ),
+    );
+    nodes['DC-01'] = { ...nodes['DC-01'], visibleState: 'clean', observed: true };
+    nodes['FIN-SW'] = {
+      ...nodes['FIN-SW'],
+      visibleState: 'clean',
+      observed: false,
+      edr: false,
+    };
+    nodes['SRV-MAIL'] = {
+      ...nodes['SRV-MAIL'],
+      visibleState: 'infected',
+      observed: true,
+      turnsToEncryption: 2,
+    };
+    nodes['SRV-SQL'] = {
+      ...nodes['SRV-SQL'],
+      visibleState: 'encrypted',
+      observed: true,
+      turnsToEncryption: undefined,
+    };
+    nodes['SRV-APP'] = {
+      ...nodes['SRV-APP'],
+      visibleState: 'patched',
+      observed: true,
+      turnsToEncryption: undefined,
+    };
+    nodes['SRV-WEB'] = {
+      ...nodes['SRV-WEB'],
+      visibleState: 'clean',
+      observed: true,
+      isolated: true,
+    };
+    nodes['SRV-FILE'] = {
+      ...nodes['SRV-FILE'],
+      visibleState: 'clean',
+      observed: true,
+    };
+    renderPresentation({ nodes }, { allowTerminal: false });
+    select('SRV-FILE');
+    return {
+      clean: 'DC-01',
+      unknown: 'FIN-SW',
+      infected: 'SRV-MAIL',
+      encrypted: 'SRV-SQL',
+      patched: 'SRV-APP',
+      isolated: 'SRV-WEB',
+      selected: 'SRV-FILE',
+    };
+  };
+  window.__sim.playEffectProof = (kind, node) => actionEffects.play(kind, node);
+  window.__sim.effectProofState = () => Object.fromEntries(
+    (['scan', 'isolate', 'reconnect', 'patch', 'restore', 'emergency'] as ActionKind[])
+      .map((kind) => [
+        kind,
+        actionEffects.group.getObjectByName(`action-effect-${kind}`)?.visible === true,
+      ]),
+  ) as Record<ActionKind, boolean>;
+}
