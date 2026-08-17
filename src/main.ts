@@ -226,7 +226,7 @@ function refreshForecast(): void {
     board.setForecast([]);
     return;
   }
-  board.setForecast(forecastSpread(currentView, state, topology).atRisk);
+  board.setForecast(forecastSpread(currentPresentation, topology).atRisk);
 }
 
 function setInputsEnabled(enabled: boolean): void {

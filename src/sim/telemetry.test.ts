@@ -171,6 +171,44 @@ describe('fog-safe incident telemetry', () => {
     expect(projectTurnEvents(events, state, state, topology)).toEqual(events.slice(1));
   });
 
+  it('allowlists public action and declaration fields instead of spreading private metadata', () => {
+    const topology = makeTopology([{ id: 'PUBLIC-NODE' }], []);
+    const state = makeGameState({ PUBLIC: { state: 'clean', infectedTurns: 0 } });
+    const action = {
+      kind: 'action',
+      action: 'patch',
+      node: 'PUBLIC-NODE',
+      outcome: 'blocked',
+      apSpent: 0,
+      reason: 'approved public reason',
+      secretNode: 'HIDDEN-FOOTHOLD',
+      roll: 0.123,
+      privateReason: 'secret operator note',
+    } as const;
+    const declaration = {
+      kind: 'containment-declaration',
+      confirmed: false,
+      secretNode: 'HIDDEN-FOOTHOLD',
+      roll: 0.456,
+      privateReason: 'secret declaration evidence',
+    } as const;
+
+    const projected = projectTurnEvents([action, declaration], state, state, topology);
+
+    expect(projected).toEqual([
+      {
+        kind: 'action',
+        action: 'patch',
+        node: 'PUBLIC-NODE',
+        outcome: 'blocked',
+        apSpent: 0,
+        reason: 'approved public reason',
+      },
+      { kind: 'containment-declaration', confirmed: false },
+    ]);
+    expect(JSON.stringify(projected)).not.toMatch(/HIDDEN|0\.123|0\.456|private|secret operator/);
+  });
+
   it('projects hidden infection as uncertain clean while preserving public operations', () => {
     const topology = makeTopology(
       [

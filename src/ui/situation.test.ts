@@ -137,6 +137,18 @@ describe('the visible-information objective', () => {
     };
     expect(deriveObjective(ready, topology, recovery())).toBe('File the Post-Incident Review');
   });
+
+  it('files the review when encrypted loss exists but the estate has no backup node', () => {
+    const topology = makeTopology([{ id: 'SERVER', type: 'server', edr: true }], []);
+    const view = toPresentationView(
+      makeGameState({ SERVER: { state: 'encrypted', infectedTurns: 7 } }),
+      topology,
+    );
+
+    expect(deriveObjective(view, topology, recovery({ backupCredits: 3 }))).toBe(
+      'File the Post-Incident Review',
+    );
+  });
 });
 
 describe('fog-safe action consequences', () => {

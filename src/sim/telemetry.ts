@@ -135,11 +135,23 @@ export function projectTurnEvents(
       case 'override':
         projected.push({ kind: 'override', node: event.node });
         break;
-      case 'action':
-        projected.push({ ...event });
+      case 'action': {
+        const observable: Extract<ObservableTurnEvent, { kind: 'action' }> = {
+          kind: 'action',
+          action: event.action,
+          outcome: event.outcome,
+          apSpent: event.apSpent,
+        };
+        if (event.node !== undefined) observable.node = event.node;
+        if (event.reason !== undefined) observable.reason = event.reason;
+        projected.push(observable);
         break;
+      }
       case 'containment-declaration':
-        projected.push({ ...event });
+        projected.push({
+          kind: 'containment-declaration',
+          confirmed: event.confirmed,
+        });
         break;
       case 'recovery-hour':
         projected.push({ kind: 'recovery-hour' });

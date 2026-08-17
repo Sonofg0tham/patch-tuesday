@@ -76,9 +76,9 @@ export function deriveObjective(
     if (criticalIsolated) return OBJECTIVES.recoverCritical;
 
     const backupNodes = topology.nodes.filter((node) => node.type === 'backup');
-    const backupSurvives =
-      backupNodes.length === 0 ||
-      backupNodes.some((node) => view.nodes[node.id]?.visibleState !== 'encrypted');
+    const backupSurvives = backupNodes.some(
+      (node) => view.nodes[node.id]?.visibleState !== 'encrypted',
+    );
     const restorableLoss = Object.values(view.nodes).some(
       (node) => node.visibleState === 'encrypted',
     );
