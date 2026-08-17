@@ -2,7 +2,7 @@
 // stays in the DOM; the canvas only ever draws the board.
 
 import type { NodeType } from '../data/topology';
-import type { NodeInspectionModel } from './situation';
+import type { ActionConsequence, NodeInspectionModel } from './situation';
 
 const TYPE_LABEL: Record<NodeType, string> = {
   workstation: 'Workstation',
@@ -14,7 +14,7 @@ const TYPE_LABEL: Record<NodeType, string> = {
 
 export interface Overlay {
   inspect(model: NodeInspectionModel | null): void;
-  setFps(fps: number): void;
+  preview(model: ActionConsequence | null): void;
 }
 
 export function createOverlay(): Overlay {
@@ -24,7 +24,7 @@ export function createOverlay(): Overlay {
   const edrEl = mustFind('inspect-edr');
   const statusEl = mustFind('inspect-status');
   const connEl = mustFind('inspect-connections');
-  const fpsEl = mustFind('overlay-fps');
+  const previewEl = mustFind('inspect-preview');
   const panel = mustFind('inspector');
 
   return {
@@ -63,10 +63,36 @@ export function createOverlay(): Overlay {
 
       connEl.textContent = `Connections (${model.connectionLabels.length}): ${model.connectionLabels.join(', ')}`;
     },
-    setFps(fps) {
-      fpsEl.textContent = `FPS: ${Math.round(fps)}`;
+    preview(model) {
+      if (model === null) {
+        previewEl.textContent = '';
+        previewEl.classList.remove('active');
+        return;
+      }
+      previewEl.textContent = consequenceText(model);
+      previewEl.classList.add('active');
     },
   };
+}
+
+function consequenceText(model: ActionConsequence): string {
+  const effects: string[] = [];
+  if (model.apGain !== undefined) effects.push(`gain ${model.apGain} AP`);
+  else effects.push(`spend ${model.apCost} AP`);
+  if (model.cutLinks !== undefined) effects.push(`cut ${model.cutLinks} live links`);
+  if (model.restoredLinks !== undefined) effects.push(`restore ${model.restoredLinks} links`);
+  if (model.pressurePerHour !== undefined && model.pressurePerHour !== 0) {
+    effects.push(`${signed(model.pressurePerHour)} pressure per hour`);
+  }
+  if (model.impactPerHour !== undefined && model.impactPerHour !== 0) {
+    effects.push(`${signed(model.impactPerHour)} Impact per hour`);
+  }
+  if (model.backupCost !== undefined) effects.push(`consume ${model.backupCost} backup credit`);
+  return `${model.label}: ${effects.join(', ')}.`;
+}
+
+function signed(value: number): string {
+  return value > 0 ? `+${value}` : String(value);
 }
 
 function mustFind(id: string): HTMLElement {

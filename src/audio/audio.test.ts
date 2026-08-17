@@ -16,6 +16,7 @@ describe('audio module', () => {
       'defeat',
       'contain',
       'override',
+      'handover',
     ]) {
       expect(SOUND_NAMES).toContain(name);
     }
@@ -29,6 +30,7 @@ describe('audio module', () => {
       // Positioned effects take the same path; a pan before unlock must also
       // be a no-op rather than reaching for a context that does not exist.
       audio.play('spread', { pan: -0.8 });
+      audio.play('handover');
       audio.setMasterVolume(0.5);
       audio.setMusicVolume(0.4);
       audio.setSfxVolume(0.9);

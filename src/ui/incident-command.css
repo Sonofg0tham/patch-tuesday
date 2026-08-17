@@ -1,0 +1,358 @@
+:root {
+  --pressure: #f5a524;
+  --console-surface: color-mix(in srgb, var(--base, #0b0e14) 91%, transparent);
+  --console-rule: color-mix(in srgb, var(--accent, #4cc9f0) 28%, transparent);
+}
+
+#hud {
+  width: 354px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+#situation-panel,
+#timeline-panel {
+  border-top: 1px solid var(--console-rule);
+  padding-top: 9px;
+  margin-top: 8px;
+}
+
+#situation-heading,
+#timeline-heading {
+  color: var(--accent, #4cc9f0);
+  font-family: 'Chakra Petch', 'Segoe UI', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+#situation-phase {
+  color: var(--accent, #4cc9f0);
+  font-family: 'Fira Code', monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
+#situation-phase[data-phase='recovery'] {
+  color: var(--pressure);
+}
+
+#situation-objective {
+  margin-top: 5px;
+  color: var(--text, #c5cdd8);
+  font-family: 'Chakra Petch', 'Segoe UI', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.035em;
+}
+
+#situation-threat {
+  margin: 3px 0 8px;
+  color: color-mix(in srgb, var(--text, #c5cdd8) 82%, transparent);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.situation-diagnostics {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: color-mix(in srgb, var(--text, #c5cdd8) 72%, transparent);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+#situation-pressure {
+  float: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#hud-pressure.imminent #pressure-fill {
+  background: var(--pressure);
+}
+
+#hud-pressure.imminent #pressure-label {
+  color: var(--pressure);
+}
+
+#hud-notice.active::before {
+  content: 'NOTICE: ';
+}
+
+#inspect-preview {
+  min-height: 0;
+  margin-top: 0;
+  border-left: 2px solid transparent;
+  color: var(--pressure);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+#inspect-preview.active {
+  min-height: 34px;
+  margin-top: 8px;
+  padding-left: 8px;
+  border-left-color: var(--pressure);
+}
+
+#incident-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.incident-command {
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 1px solid var(--console-rule);
+  background: color-mix(in srgb, var(--accent, #4cc9f0) 7%, transparent);
+  color: var(--text, #c5cdd8);
+  font-family: 'Chakra Petch', 'Segoe UI', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.incident-command-primary {
+  grid-column: 1 / -1;
+  border-color: var(--accent, #4cc9f0);
+  color: var(--accent, #4cc9f0);
+}
+
+.incident-command[data-command='declare-containment'],
+.incident-command[data-command='file-review'] {
+  border-color: color-mix(in srgb, var(--pressure) 70%, transparent);
+  color: var(--pressure);
+}
+
+.incident-command[data-command='skip'] {
+  grid-column: 1 / -1;
+}
+
+.incident-command:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent, #4cc9f0) 18%, transparent);
+}
+
+.incident-command:focus-visible {
+  outline: 2px solid var(--accent, #4cc9f0);
+  outline-offset: 2px;
+}
+
+.incident-command:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+#timeline-panel {
+  margin-bottom: 6px;
+}
+
+.timeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 126px;
+  margin-top: 6px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.timeline-entry {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 7px;
+  padding-top: 4px;
+  border-top: 1px solid color-mix(in srgb, var(--accent, #4cc9f0) 12%, transparent);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.timeline-time {
+  color: var(--accent, #4cc9f0);
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline-text {
+  color: color-mix(in srgb, var(--text, #c5cdd8) 78%, transparent);
+}
+
+.roster-item {
+  align-items: center;
+}
+
+.roster-state {
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.roster-state.state-clean,
+.roster-state.state-patched {
+  color: var(--accent, #4cc9f0);
+}
+
+.roster-state.state-unknown {
+  color: var(--pressure);
+}
+
+.roster-state.state-infected,
+.roster-state.state-encrypted {
+  color: var(--infection, #f72585);
+  font-weight: 600;
+}
+
+.roster-item[data-isolated='true'] {
+  border-style: dashed;
+  border-color: var(--pressure);
+}
+
+/* Emergency capacity and blocked guidance are operational uncertainty, not
+   compromise. Magenta stays reserved for observable threat state. */
+.action-button[data-kind='emergency'] {
+  border-color: color-mix(in srgb, var(--pressure) 55%, transparent);
+  background: color-mix(in srgb, var(--pressure) 10%, transparent);
+}
+
+.action-button[data-kind='emergency']:hover:not(:disabled) {
+  border-color: var(--pressure);
+  background: color-mix(in srgb, var(--pressure) 18%, transparent);
+}
+
+#action-reason.blocked {
+  color: var(--pressure);
+}
+
+#handover {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow-y: auto;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent, #4cc9f0) 8%, transparent) 1px, transparent 1px),
+    color-mix(in srgb, var(--base, #0b0e14) 94%, transparent);
+  background-size: 32px 32px, auto;
+  backdrop-filter: blur(8px);
+}
+
+#handover[hidden] {
+  display: none;
+}
+
+.handover-panel {
+  width: min(620px, 100%);
+  padding: 28px 30px;
+  border-top: 3px solid var(--pressure);
+  border-right: 1px solid var(--console-rule);
+  border-bottom: 1px solid var(--console-rule);
+  border-left: 1px solid var(--console-rule);
+  background: var(--console-surface);
+  box-shadow: 0 22px 80px rgb(0 0 0 / 0.55);
+}
+
+.handover-eyebrow {
+  color: var(--pressure);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+}
+
+.handover-title {
+  margin: 7px 0 5px;
+  color: var(--accent, #4cc9f0);
+  font-family: 'Chakra Petch', 'Segoe UI', sans-serif;
+  font-size: clamp(24px, 5vw, 38px);
+  font-weight: 600;
+  letter-spacing: 0.035em;
+  line-height: 1.05;
+}
+
+.handover-summary {
+  max-width: 54ch;
+  margin-bottom: 20px;
+  color: color-mix(in srgb, var(--text, #c5cdd8) 82%, transparent);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.handover-accept,
+.handover-skip {
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid var(--accent, #4cc9f0);
+  background: color-mix(in srgb, var(--accent, #4cc9f0) 14%, transparent);
+  color: var(--accent, #4cc9f0);
+  font-family: 'Chakra Petch', 'Segoe UI', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.handover-accept:focus-visible,
+.handover-skip:focus-visible {
+  outline: 3px solid var(--pressure);
+  outline-offset: 3px;
+}
+
+.handover-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 320px;
+  margin-bottom: 18px;
+  list-style: none;
+}
+
+.handover-lines li {
+  padding: 7px 9px;
+  border-left: 2px solid var(--console-rule);
+  color: var(--text, #c5cdd8);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.handover-lines li:first-child {
+  border-left-color: var(--pressure);
+  color: var(--pressure);
+  font-family: 'Chakra Petch', 'Segoe UI', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+body.reduced-motion .handover-lines li {
+  animation: none;
+}
+
+#resolution-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
+body.high-contrast .incident-command,
+body.high-contrast .handover-panel,
+body.high-contrast #situation-panel,
+body.high-contrast #timeline-panel {
+  border-color: var(--accent, #4cc9f0);
+}
+
+@media (max-height: 760px) {
+  #timeline-panel {
+    display: none;
+  }
+
+  #hud {
+    font-size: 12px;
+  }
+}

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <title>Patch Tuesday — incident response tactics</title>
+    <title>Patch Tuesday - incident response tactics</title>
     <meta
       name="description"
       content="A turn-based incident response tactics game. Ransomware spreads across a 3D network; you're the incident lead. Contain it, spend your backups wisely, and file the Post-Incident Review. Every mechanic is real IR tradecraft."
@@ -21,20 +21,29 @@
 
       <div id="hud-clockrow">
         <span id="hud-clock">T+01h</span>
-        <span id="hud-seed">SEED ----</span>
-      </div>
-      <div id="hud-status">0 / 24 encrypted</div>
-
-      <div id="hud-resources">
-        <span id="hud-ap">AP 3/3</span>
-        <span id="hud-credits">BACKUPS 3</span>
-        <span id="hud-score">IMPACT 0</span>
+        <span id="situation-phase" data-phase="active">ACTIVE RESPONSE</span>
       </div>
 
-      <div id="hud-pressure">
-        <div id="pressure-label">BUSINESS PRESSURE</div>
-        <div id="pressure-bar"><div id="pressure-fill"></div></div>
-      </div>
+      <section id="situation-panel" aria-labelledby="situation-heading">
+        <h2 id="situation-heading">Situation</h2>
+        <div id="situation-objective">Establish trustworthy visibility</div>
+        <div id="situation-threat">Observed threat awaiting assessment.</div>
+
+        <div id="hud-resources">
+          <span id="hud-ap">AP 2/2</span>
+          <span id="hud-credits">BACKUPS 3</span>
+          <span id="hud-score">IMPACT 0</span>
+        </div>
+
+        <div id="hud-pressure">
+          <div id="pressure-label"><span id="pressure-label-text">BUSINESS PRESSURE</span> <span id="situation-pressure">0/100</span></div>
+          <div id="pressure-bar"><div id="pressure-fill"></div></div>
+        </div>
+        <div class="situation-diagnostics">
+          <span id="hud-seed">SEED ----</span>
+          <span id="overlay-fps">FPS --</span>
+        </div>
+      </section>
       <div id="hud-notice" aria-live="assertive"></div>
 
       <div id="inspector" class="empty" aria-live="polite">
@@ -44,16 +53,20 @@
         <div id="inspect-edr" class="inspect-edr"></div>
         <div id="inspect-status" class="inspect-status"></div>
         <div id="inspect-connections"></div>
+        <div id="inspect-preview" aria-live="polite"></div>
       </div>
 
       <!-- The action bar (six actions + emergency) is built in ui/actions.ts. -->
       <div id="action-bar" role="group" aria-label="Actions"></div>
       <div id="action-reason" aria-live="assertive"></div>
 
-      <button id="end-turn" type="button">End turn  ⏎</button>
+      <div id="incident-controls" role="group" aria-label="Incident lifecycle"></div>
 
-      <div id="overlay-fps">FPS: --</div>
-      <div id="hud-help">Select a node, then act · End turn to advance · F forecast · D debug</div>
+      <section id="timeline-panel" aria-labelledby="timeline-heading">
+        <h2 id="timeline-heading">Incident timeline</h2>
+        <div id="timeline"></div>
+      </section>
+      <div id="hud-help">Select an asset, preview the consequence, then act. Enter advances the hour.</div>
     </div>
 
     <!-- Right side: the asset register, the keyboard path onto the board. -->
@@ -69,6 +82,12 @@
     <div id="menu" hidden></div>
     <div id="pause" hidden></div>
     <div id="settings" hidden></div>
+
+    <!-- Same-document handover preserves the browser audio gesture. -->
+    <div id="handover" hidden></div>
+
+    <!-- Task 7 owns the event sequence rendered into this reserved stage. -->
+    <div id="resolution-stage" aria-live="off"></div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

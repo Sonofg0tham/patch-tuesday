@@ -26,7 +26,8 @@ export type SoundName =
   | 'encrypt-heavy' // the DC or Backup Node encrypts: heavier
   | 'defeat' // the run is lost: a flat dead-line tone
   | 'contain' // the worm is contained: quietly triumphant but exhausted
-  | 'override'; // business pressure force-reconnected a node: phone slammed down
+  | 'override' // business pressure force-reconnected a node: phone slammed down
+  | 'handover'; // short pager cue when the player accepts incident command
 
 export const SOUND_NAMES: SoundName[] = [
   'confirm',
@@ -37,6 +38,7 @@ export const SOUND_NAMES: SoundName[] = [
   'defeat',
   'contain',
   'override',
+  'handover',
 ];
 
 /** Optional placement for a sound: -1 hard left, 0 centre, 1 hard right. */
@@ -72,6 +74,7 @@ const DUCK: Partial<Record<SoundName, [depth: number, seconds: number]>> = {
   override: [0.5, 0.3],
   defeat: [0.85, 1.6],
   contain: [0.5, 1.0],
+  handover: [0.25, 0.35],
 };
 
 export function createAudio(): Audio {
@@ -355,6 +358,11 @@ const SYNTHS: Record<SoundName, Synth> = {
     noiseBurst(ctx, out, 0.06, 0.4, 'highpass', 2400); // the clack
     tone(ctx, out, 'sine', 70, 0.4, 0.005, 0.18); // the thud
     tone(ctx, out, 'square', 620, 0.08, 0.005, 0.05); // a clipped ring
+  },
+  handover(ctx, out) {
+    // Conservative two-pulse pager. Task 10 owns the final phone layer and mix.
+    tone(ctx, out, 'square', 760, 0.11, 0.004, 0.11);
+    tone(ctx, out, 'square', 920, 0.08, 0.08, 0.14);
   },
 };
 
