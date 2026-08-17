@@ -36,7 +36,7 @@ import { createPostFx } from './render/postfx';
 import { tickMaterials } from './render/materials';
 import { createPointerPicker } from './render/picking';
 import { createSpreadAnimator } from './render/spread-animation';
-import { createTurnDirector } from './render/turn-director';
+import { createTurnDirector, TURN_DIRECTOR_TIMING } from './render/turn-director';
 import { ForecastRouteLayer } from './render/forecast-routes';
 import { createOverlay } from './ui/overlay';
 import { createRoster } from './ui/roster';
@@ -50,6 +50,8 @@ import { createPirScreen } from './ui/pir';
 import { createRunbook } from './ui/menu';
 import { createSettingsPanel } from './ui/settings-panel';
 import { createPauseMenu } from './ui/pause';
+import { createIncidentPauseCoordinator } from './ui/pause-coordinator';
+import { createResolutionStage } from './ui/resolution-stage';
 import { SIM_CONFIG } from './sim/config';
 import { createInitialState, blastRadius, encryptedCount } from './sim/worm';
 import {
@@ -108,6 +110,7 @@ const rosterContainer = mustFind('roster');
 const debug = createDebug(mustFind('debug'));
 const pirScreen = createPirScreen(mustFind('pir'));
 const animator = createSpreadAnimator(board, topology);
+const resolutionStage = createResolutionStage(mustFind('resolution-stage'));
 const audio = createAudio();
 const shake = createScreenShake();
 
@@ -323,6 +326,7 @@ function setInputsEnabled(enabled: boolean): void {
 function endGame(abandoned = false): void {
   if (ended) return;
   ended = true;
+  resolutionStage.clear();
   setInputsEnabled(false);
 
   const record: RunRecord = {
@@ -487,6 +491,7 @@ function resolveHourly(
   pendingResolution = { nextState: result.nextState, trueEvents: result.events };
   resolutionLocked = true;
   animator.clear();
+  resolutionStage.clear();
   setInputsEnabled(false);
   renderIncidentControls();
 
@@ -516,6 +521,10 @@ function recordImmediateResolution(
 }
 
 function presentAnalysis(view: PresentationView): void {
+  resolutionStage.showAnalysis({
+    reducedMotion: motionReduced(),
+    durationMs: TURN_DIRECTOR_TIMING.analysisLeadSeconds * 1000,
+  });
   renderPresentation(view, { allowTerminal: false });
   hud.setNotice('Forensic telemetry sweep in progress', 'defence');
   audio.play('analysis');
@@ -526,6 +535,7 @@ function presentResolutionBeat(
   _index: number,
   view: PresentationView,
 ): void {
+  resolutionStage.clear();
   renderPresentation(view, {
     animateEncryptionNode: event.kind === 'encrypted' ? event.node : undefined,
     allowTerminal: false,
@@ -569,6 +579,7 @@ function settleResolution(
   view: PresentationView,
   events: readonly ObservableTurnEvent[],
 ): void {
+  resolutionStage.clear();
   const pending = pendingResolution;
   if (pending === null) return;
   pendingResolution = null;
@@ -582,6 +593,7 @@ function settleResolution(
 }
 
 function completeResolution(): void {
+  resolutionStage.clear();
   resolutionLocked = false;
   renderIncidentControls();
   if (state.status === 'playing' && !paused && !handoverActive && !ended) {
@@ -700,16 +712,27 @@ if (briefMode) {
 } else {
   // In a run: Escape opens the pause menu. Abandoning files the PIR for the run
   // so far, marked ABANDONED.
+  // The menu only invokes these closures after construction, once both sides
+  // of the small coordinator boundary exist.
   const pauseMenu = createPauseMenu(mustFind('pause'), {
-    onResume: () => {
-      paused = false;
-      if (state.status === 'playing' && !resolutionLocked) setInputsEnabled(true);
-    },
+    onResume: () => pauseCoordinator.resume(),
     onSettings: () => settingsPanel.open(),
-    onAbandon: () => {
-      pauseMenu.close();
-      endGame(true);
+    onAbandon: () => pauseCoordinator.abandon(),
+  });
+  const pauseCoordinator = createIncidentPauseCoordinator({
+    isResolutionLocked: () => resolutionLocked,
+    isEnded: () => ended,
+    canResumeInputs: () =>
+      state.status === 'playing' && !resolutionLocked && !ended && !handoverActive,
+    setPaused(value) {
+      paused = value;
     },
+    setInputsEnabled,
+    interruptResolution: () => director.interrupt(),
+    openPause: () => pauseMenu.open(),
+    closePause: () => pauseMenu.close(),
+    endAbandonedRun: () => endGame(true),
+    focusPrimary: () => incidentControls.focusPrimary(),
   });
 
   window.addEventListener('keydown', (event) => {
@@ -722,9 +745,7 @@ if (briefMode) {
     if (pauseMenu.isOpen()) {
       pauseMenu.close();
     } else {
-      paused = true;
-      setInputsEnabled(false);
-      pauseMenu.open();
+      pauseCoordinator.requestPause();
     }
   });
 
