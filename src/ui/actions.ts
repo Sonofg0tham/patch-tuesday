@@ -6,7 +6,7 @@
 
 import type { ActionKind } from '../sim/types';
 
-interface ActionDef {
+export interface ActionDef {
   kind: ActionKind;
   label: string;
   hotkey: string; // single lower-case key
@@ -14,7 +14,7 @@ interface ActionDef {
   needsNode: boolean;
 }
 
-const ACTIONS: ActionDef[] = [
+export const ACTION_CATALOGUE: readonly ActionDef[] = [
   { kind: 'scan', label: 'Deploy sensor', hotkey: 's', cost: '1', needsNode: true },
   { kind: 'isolate', label: 'Isolate', hotkey: 'i', cost: '1', needsNode: true },
   { kind: 'reconnect', label: 'Reconnect', hotkey: 'c', cost: '1', needsNode: true },
@@ -43,7 +43,7 @@ export function createActionBar(container: HTMLElement, handlers: ActionHandlers
   const reasonEl = mustFind('action-reason');
   const buttons: HTMLButtonElement[] = [];
 
-  for (const def of ACTIONS) {
+  for (const def of ACTION_CATALOGUE) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'action-button';
@@ -70,7 +70,7 @@ export function createActionBar(container: HTMLElement, handlers: ActionHandlers
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const active = document.activeElement;
     if (active instanceof HTMLElement && ['INPUT', 'TEXTAREA'].includes(active.tagName)) return;
-    const def = ACTIONS.find((a) => a.hotkey === event.key.toLowerCase());
+    const def = ACTION_CATALOGUE.find((a) => a.hotkey === event.key.toLowerCase());
     if (!def) return;
     event.preventDefault();
     handlers.onAction(def.kind);

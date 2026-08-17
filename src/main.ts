@@ -45,9 +45,11 @@ import { createRunbook } from './ui/menu';
 import { createSettingsPanel } from './ui/settings-panel';
 import { createPauseMenu } from './ui/pause';
 import { SIM_CONFIG } from './sim/config';
-import { createInitialState, toVisibleView, blastRadius, encryptedCount } from './sim/worm';
+import { createInitialState, blastRadius, encryptedCount } from './sim/worm';
+import { toPresentationView, type PresentationView } from './sim/telemetry';
 import { applyPlayerAction, endTurn } from './sim/game';
 import { forecastSpread } from './sim/forecast';
+import { deriveNodeInspectionModel } from './ui/situation';
 import { RunRecorder, buildPir, type RunRecord } from './sim/pir';
 import type { ActionKind, GameState, PlayerAction, TurnEvent, VisibleState } from './sim/types';
 
@@ -80,7 +82,7 @@ context.scene.add(board.group);
 const postfx = createPostFx(context.renderer, context.scene, context.camera, renderQuality());
 postfx.setFilmAmount(motionReduced() ? 0 : effectivePulseScale());
 
-const overlay = createOverlay(topology);
+const overlay = createOverlay();
 const hud = createHud();
 const rosterContainer = mustFind('roster');
 const debug = createDebug(mustFind('debug'));
@@ -131,7 +133,8 @@ const initialState: GameState = createInitialState(topology, seed);
 // same protocol the headless bots use, so a played review is built identically.
 const recorder = new RunRecorder();
 let state: GameState = initialState;
-let currentView: Record<string, VisibleState> = toVisibleView(state, topology);
+let currentPresentation = toPresentationView(state, topology);
+let currentView: Record<string, VisibleState> = visibleStates(currentPresentation);
 let lastEvents: TurnEvent[] = [];
 let selectedId: string | null = null;
 let ended = false;
@@ -147,12 +150,7 @@ function refreshHighlight(): void {
 }
 
 function refreshInspector(): void {
-  const node = selectedId ? (topology.byId.get(selectedId) ?? null) : null;
-  const status = selectedId ? currentView[selectedId] : undefined;
-  const ns = selectedId ? state.nodes[selectedId] : undefined;
-  // A deployed sensor shows as coverage, but built-in EDR is not a "sensor".
-  const sensored = Boolean(ns?.revealed) && !(node?.edr ?? false);
-  overlay.inspect(node, status, ns?.isolated, sensored, ns?.isolationAge);
+  overlay.inspect(deriveNodeInspectionModel(selectedId, currentPresentation, topology));
 }
 
 function select(nodeId: string | null): void {
@@ -203,12 +201,14 @@ function renderHud(): void {
 // Full refresh: board, isolation, HUD, inspector, debug, and the end screen.
 // Called after actions (instant) and once a turn's spread animation completes.
 function renderState(): void {
-  currentView = toVisibleView(state, topology);
+  currentPresentation = toPresentationView(state, topology);
+  currentView = visibleStates(currentPresentation);
   board.applyView(currentView);
   for (const node of topology.nodes) {
-    board.setIsolated(node.id, Boolean(state.nodes[node.id].isolated));
+    const presentation = currentPresentation.nodes[node.id];
+    board.setIsolated(node.id, presentation?.isolated ?? false);
     // A sensor ring only for coverage the player added, not built-in EDR.
-    board.setSensor(node.id, Boolean(state.nodes[node.id].revealed) && !node.edr);
+    board.setSensor(node.id, Boolean(presentation?.edr) && !node.edr);
   }
   renderHud();
   refreshForecast();
@@ -329,7 +329,8 @@ hud.onEndTurn(() => {
   lastEvents = result.events;
   recorder.record(turnNow, result.events);
   recorder.tickDowntime(state);
-  currentView = toVisibleView(state, topology);
+  currentPresentation = toPresentationView(state, topology);
+  currentView = visibleStates(currentPresentation);
   // Announce any business override the turn it happens; blank turns clear it.
   const overrides = lastEvents.filter(
     (e): e is Extract<TurnEvent, { kind: 'override' }> => e.kind === 'override',
@@ -501,6 +502,12 @@ function mustFind(id: string): HTMLElement {
   const element = document.getElementById(id);
   if (!element) throw new Error(`#${id} missing from index.html`);
   return element;
+}
+
+function visibleStates(view: PresentationView): Record<string, VisibleState> {
+  return Object.fromEntries(
+    Object.entries(view.nodes).map(([id, node]) => [id, node.visibleState]),
+  );
 }
 
 // Headless verification hook: renders a burst of frames synchronously and
