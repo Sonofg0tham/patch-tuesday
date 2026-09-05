@@ -11,6 +11,10 @@ import '@fontsource/fira-code/400.css';
 import '@fontsource/fira-code/500.css';
 import './ui/style.css';
 import './ui/incident-command.css';
+import './ui/company.css';
+import { createResponseGuide, nextResponseStep } from './ui/response-guide';
+import { createCompanyLayout } from './ui/company-layout';
+import { createAssetNotices } from './ui/asset-notices';
 
 import { applyPaletteToCss } from './config/palette';
 import { createAudio } from './audio/audio';
@@ -91,7 +95,9 @@ const scenario = scenarioById(scenarioParam);
 const seed = params.get('seed') ?? randomSeed();
 const topology = scenario.build(seed);
 
+const companyLayout = createCompanyLayout(() => context.fitEstate());
 const context = createScene(topology);
+const assetNotices = createAssetNotices(topology, context.camera);
 const board = createBoard(topology, context.environment);
 context.scene.add(board.group);
 const forecastRoutes = new ForecastRouteLayer(topology);
@@ -107,6 +113,11 @@ postfx.setFilmAmount(motionReduced() ? 0 : effectivePulseScale());
 const overlay = createOverlay();
 const hud = createHud();
 const situationPanel = createSituationPanel(mustFind('hud'));
+const responseGuide = createResponseGuide(mustFind('company-sidebar'), (id) => {
+  if (!canIssueLifecycleCommand()) return;
+  if (!mustFind('roster').hidden) mustFind('register-toggle').click();
+  select(id);
+});
 const timeline = createTimeline(mustFind('timeline'));
 const rosterContainer = mustFind('roster');
 const debug = createDebug(mustFind('debug'));
@@ -180,6 +191,7 @@ function refreshInspector(): void {
 }
 
 function refreshPreview(): void {
+  board.setActionPreview(selectedId, resolutionLocked || paused || handoverActive ? null : previewKind);
   if (previewKind === null) {
     overlay.preview(null);
     return;
@@ -232,6 +244,9 @@ function renderIncidentControls(): void {
 }
 
 function renderSituation(): void {
+  responseGuide.render(nextResponseStep(currentPresentation, topology, {
+    phase: state.phase, pressure: state.pressure, backupCredits: state.backupCredits, ap: state.ap,
+  }), canIssueLifecycleCommand());
   situationPanel.render({
     phase: state.phase,
     objective: deriveObjective(currentPresentation, topology, {
@@ -319,12 +334,14 @@ function refreshForecast(): void {
 function setInputsEnabled(enabled: boolean): void {
   actionBar.setEnabled(enabled);
   incidentControls.setEnabled(enabled);
+  responseGuide.setEnabled(enabled);
 }
 
 function endGame(abandoned = false): void {
   if (ended) return;
   ended = true;
   resolutionStage.clear();
+  assetNotices.clear();
   setInputsEnabled(false);
 
   const record: RunRecord = {
@@ -391,13 +408,18 @@ function act(kind: ActionKind): void {
     const applied = result.events.find(
       (event) => event.kind === 'action' && event.outcome === 'applied',
     );
-    if (applied?.kind === 'action') actionEffects.play(applied.action, applied.node);
+    if (applied?.kind === 'action') {
+      actionEffects.play(applied.action, applied.node);
+      if (applied.action === 'restore' && applied.node) board.restartEquipment(applied.node);
+    }
+    observable.forEach((event) => assetNotices.show(event));
   }
   state = result.state;
   actionBar.setReason(result.ok ? (result.reason ?? '') : (result.reason ?? ''), result.ok);
   // A clean confirm when an action lands, a distinct denied when it is blocked
   // (alongside the on-screen reason).
-  audio.play(result.ok ? 'confirm' : 'denied');
+  const actionSound = { scan: 'sensor', isolate: 'disconnect', reconnect: 'reconnect', patch: 'confirm', restore: 'restart', emergency: 'confirm' } as const;
+  audio.play(result.ok ? actionSound[kind] : 'denied', { pan: selectedId && needsNode ? panFor(selectedId) : 0 });
   renderState();
 }
 
@@ -538,6 +560,7 @@ function presentResolutionBeat(
   view: PresentationView,
 ): void {
   resolutionStage.clear();
+  assetNotices.show(event);
   renderPresentation(view, {
     animateEncryptionNode: event.kind === 'encrypted' ? event.node : undefined,
     allowTerminal: false,
@@ -812,8 +835,10 @@ function tick(): void {
 
   if (resizeIfNeeded(context)) {
     postfx.setSize(window.innerWidth, window.innerHeight);
+    context.fitEstate();
   }
   context.controls.update();
+  assetNotices.tick(seconds);
   clampPan(context, topology);
   director.tick(seconds);
   animator.update(seconds);
@@ -848,6 +873,13 @@ function mustFind(id: string): HTMLElement {
   if (!element) throw new Error(`#${id} missing from index.html`);
   return element;
 }
+
+window.addEventListener('pagehide', (event) => {
+  if (event.persisted) return;
+  companyLayout.dispose();
+  assetNotices.dispose();
+  board.dispose();
+});
 
 function visibleStates(view: PresentationView): Record<string, VisibleState> {
   return Object.fromEntries(

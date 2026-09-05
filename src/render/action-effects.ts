@@ -14,6 +14,8 @@ interface EffectSlot {
   action: ActionEffectAction;
   root: THREE.Group;
   startedAt: number | null;
+  motionElapsed: number;
+  lastMotionAt: number | null;
   duration: number;
   bases: readonly ObjectTransform[];
 }
@@ -72,6 +74,8 @@ export class ActionEffectPool {
         action,
         root,
         startedAt: null,
+        motionElapsed: 0,
+        lastMotionAt: null,
         duration: action === 'emergency' ? 0.9 : 0.72,
         bases: root.children.map((object) => ({
           object,
@@ -109,6 +113,8 @@ export class ActionEffectPool {
     const y = node && aboveChassis ? nodeTopHeight(node.type) + 0.24 : 0;
     slot.root.position.set(node?.x ?? 0, y, node?.z ?? 0);
     slot.startedAt = startedAt;
+    slot.motionElapsed = 0;
+    slot.lastMotionAt = startedAt;
     slot.root.visible = true;
     return true;
   }
@@ -119,27 +125,30 @@ export class ActionEffectPool {
       if (slot.startedAt === null) continue;
       const elapsed = Math.max(0, nowSeconds - slot.startedAt);
       if (elapsed >= slot.duration) {
-        slot.root.visible = false;
-        slot.startedAt = null;
+        this.expire(slot);
         continue;
       }
       if (this.reducedMotion) continue;
-      const progress = elapsed / slot.duration;
-      animate(slot, progress);
+      this.advance(slot, nowSeconds);
     }
   }
 
   setReducedMotion(enabled: boolean): void {
     if (this.reducedMotion === enabled) return;
-    this.reducedMotion = enabled;
-    // Reset active slots at the transition boundary. Reduced motion receives a
-    // stable complete cue, and returning to normal never resumes stale travel.
     const transitionAt = this.now();
     for (const slot of this.slots.values()) {
       if (slot.startedAt === null) continue;
-      this.reset(slot);
-      slot.startedAt = transitionAt;
+      if (transitionAt - slot.startedAt >= slot.duration) {
+        this.expire(slot);
+        continue;
+      }
+      if (enabled) {
+        this.advance(slot, transitionAt);
+      } else {
+        slot.lastMotionAt = transitionAt;
+      }
     }
+    this.reducedMotion = enabled;
   }
 
   dispose(): void {
@@ -161,6 +170,8 @@ export class ActionEffectPool {
   }
 
   private reset(slot: EffectSlot): void {
+    slot.motionElapsed = 0;
+    slot.lastMotionAt = null;
     for (const base of slot.bases) {
       base.object.position.copy(base.position);
       base.object.rotation.copy(base.rotation);
@@ -174,6 +185,22 @@ export class ActionEffectPool {
         }
       }
     }
+  }
+
+  private advance(slot: EffectSlot, wallTime: number): void {
+    const lastMotionAt = slot.lastMotionAt ?? wallTime;
+    slot.motionElapsed = Math.min(
+      slot.duration,
+      slot.motionElapsed + Math.max(0, wallTime - lastMotionAt),
+    );
+    slot.lastMotionAt = wallTime;
+    animate(slot, slot.motionElapsed / slot.duration);
+  }
+
+  private expire(slot: EffectSlot): void {
+    slot.root.visible = false;
+    slot.startedAt = null;
+    slot.lastMotionAt = null;
   }
 }
 

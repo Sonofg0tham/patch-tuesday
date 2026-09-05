@@ -37,7 +37,9 @@ import {
   type CableMaterial,
 } from './materials';
 import { haloTexture } from './textures';
-import { infectionPulseScale, StateMarkerLayer } from './state-markers';
+import { StateMarkerLayer } from './state-markers';
+import { CompanyLayer } from './company';
+import type { ActionKind } from '../sim/types';
 
 export const BOARD_SIGNAL_COLOURS = {
   clean: palette.nodeBase,
@@ -102,6 +104,9 @@ export interface Board {
   resolveHit(object: THREE.Object3D, instanceId: number | undefined): string | null;
   setHighlight(nodeId: string | null): void;
   setSelected(nodeId: string | null): void;
+  setActionPreview(nodeId: string | null, action: ActionKind | null): void;
+  restartEquipment(nodeId: string): void;
+  dispose(): void;
   /** Set one node's visible state. animate=true runs the encryption transition. */
   setVisibleState(nodeId: string, state: VisibleState, animate?: boolean): void;
   /** Apply the complete fog-safe public board projection. */
@@ -132,6 +137,8 @@ export function createBoard(topology: Topology, environment: THREE.Texture | nul
   const glow = VISUAL_CONFIG.glowIntensity;
   const markerLayer = new StateMarkerLayer(topology, { reducedMotion: motionReduced() });
   group.add(markerLayer.group);
+  const company = new CompanyLayer(topology);
+  group.add(company.group);
 
   const meshByType = new Map<NodeType, THREE.InstancedMesh>();
   const glowByType = new Map<NodeType, THREE.InstancedBufferAttribute>();
@@ -434,9 +441,9 @@ export function createBoard(topology: Topology, environment: THREE.Texture | nul
     // The physical threat plate now carries infection in a still frame.
     // Reduced motion can therefore hold both the plate and surface steady.
     const reduced = motionReduced();
-    const pulse = infectionPulseScale(elapsed * VISUAL_CONFIG.pulseSpeed, reduced);
+    company.tick(elapsed, reduced);
     markerLayer.setReducedMotion(reduced);
-    markerLayer.tick(elapsed);
+    const pulse = markerLayer.tick(elapsed * VISUAL_CONFIG.pulseSpeed);
     for (const [nodeId, state] of visibleById) {
       if (state !== 'infected' || encTransitions.has(nodeId)) continue;
       setInstanceGlow(nodeId, GLOW_INFECTED * pulse);
@@ -496,9 +503,11 @@ export function createBoard(topology: Topology, environment: THREE.Texture | nul
 
   return {
     group,
-    nodeMeshes: [...meshByType.values()],
+    nodeMeshes: [...meshByType.values(), ...company.pickMeshes],
     resolveHit(object, instanceId) {
       if (instanceId === undefined) return null;
+      const assetIds = object.userData.assetIds as string[] | undefined;
+      if (assetIds) return assetIds[instanceId] ?? null;
       const type = object.userData.nodeType as NodeType | undefined;
       if (!type) return null;
       return instanceOrder.get(type)?.[instanceId] ?? null;
@@ -517,7 +526,11 @@ export function createBoard(topology: Topology, environment: THREE.Texture | nul
       repaint(previous);
       repaint(selectedId);
       markerLayer.apply(latestPresentation, selectedId);
+      company.preview(selectedId, null);
     },
+    setActionPreview(nodeId, action) { company.preview(nodeId, action); },
+    restartEquipment(nodeId) { company.restart(nodeId, performance.now() / 1000, motionReduced()); },
+    dispose() { company.dispose(); },
     setVisibleState,
     applyPresentation(view) {
       latestPresentation = view;
@@ -531,6 +544,7 @@ export function createBoard(topology: Topology, environment: THREE.Texture | nul
         setNodeSensor(node.id, presentation.edr && !node.edr);
       }
       markerLayer.apply(view, selectedId);
+      company.apply(view);
     },
     setPressure(fraction) {
       pressureFraction = THREE.MathUtils.clamp(fraction, 0, 1);

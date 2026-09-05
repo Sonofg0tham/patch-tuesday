@@ -85,12 +85,12 @@ describe('pooled player action effects', () => {
     expect(pool.group.children).toHaveLength(size);
   });
 
-  it('settles live effects when reduced motion changes and honours later changes', () => {
+  it('preserves an active effect pose across both live motion transitions', () => {
     let now = 0;
     const pool = new ActionEffectPool(topology(), { now: () => now });
     expect(pool.play('restore', 'NODE-A')).toBe(true);
     const effect = pool.group.getObjectByName('action-effect-restore') as THREE.Group;
-    const before = effect.children.map((child) => ({
+    const pose = (): unknown => effect.children.map((child) => ({
       position: child.position.toArray(),
       rotation: child.rotation.toArray(),
       scale: child.scale.toArray(),
@@ -98,48 +98,43 @@ describe('pooled player action effects', () => {
 
     now = 0.2;
     pool.tick(now);
-    const travelling = effect.children.map((child) => ({
-      position: child.position.toArray(),
-      rotation: child.rotation.toArray(),
-      scale: child.scale.toArray(),
-    }));
-    expect(travelling).not.toEqual(before);
+    const beforePause = pose();
 
     pool.setReducedMotion(true);
-    const settled = effect.children.map((child) => ({
-      position: child.position.toArray(),
-      rotation: child.rotation.toArray(),
-      scale: child.scale.toArray(),
-    }));
-    now = 0.35;
+    expect(pose()).toEqual(beforePause);
     pool.tick(now);
-    expect(
-      effect.children.map((child) => ({
-        position: child.position.toArray(),
-        rotation: child.rotation.toArray(),
-        scale: child.scale.toArray(),
-      })),
-    ).toEqual(settled);
+    expect(pose()).toEqual(beforePause);
 
-    now = 1.2;
-    expect(pool.play('scan', 'NODE-A')).toBe(true);
-    const scan = pool.group.getObjectByName('action-effect-scan') as THREE.Group;
-    const reducedScan = scan.children.map((child) => child.rotation.toArray());
-    now = 1.4;
+    now = 0.45;
     pool.tick(now);
-    expect(scan.children.map((child) => child.rotation.toArray())).toEqual(reducedScan);
+    expect(pose()).toEqual(beforePause);
 
     pool.setReducedMotion(false);
-    now = 1.45;
+    const beforeResume = pose();
     pool.tick(now);
-    expect(Math.abs(scan.children[1].rotation.z)).toBeLessThan(1);
-    now = 2.3;
-    expect(pool.play('reconnect', 'NODE-A')).toBe(true);
-    const reconnect = pool.group.getObjectByName('action-effect-reconnect') as THREE.Group;
-    const resumed = reconnect.children.map((child) => child.position.toArray());
-    now = 2.5;
+    expect(pose()).toEqual(beforeResume);
+
+    now = 0.5;
     pool.tick(now);
-    expect(reconnect.children.map((child) => child.position.toArray())).not.toEqual(resumed);
+    expect(pose()).not.toEqual(beforeResume);
+  });
+
+  it('keeps the original wall-clock expiry while reduced and never resurrects', () => {
+    let now = 0;
+    const pool = new ActionEffectPool(topology(), { now: () => now });
+    expect(pool.play('scan', 'NODE-A')).toBe(true);
+    const scan = pool.group.getObjectByName('action-effect-scan') as THREE.Group;
+
+    now = 0.1;
+    pool.tick(now);
+    pool.setReducedMotion(true);
+    now = 0.8;
+    pool.tick(now);
+    expect(scan.visible).toBe(false);
+
+    pool.setReducedMotion(false);
+    pool.tick(now);
+    expect(scan.visible).toBe(false);
   });
 
   it('disposes every pooled geometry and material', () => {

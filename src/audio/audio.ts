@@ -19,6 +19,10 @@ import { createMusic, type Music, type Outcome } from './music';
 import { createReverbBus, type ReverbBus } from './reverb';
 
 export type SoundName =
+  | 'disconnect'
+  | 'reconnect'
+  | 'sensor'
+  | 'restart'
   | 'confirm' // a clean action landed
   | 'denied' // an illegal action, alongside the plain-English reason
   | 'spread' // one worm spread attempt during resolution (a tense tick)
@@ -31,6 +35,7 @@ export type SoundName =
   | 'analysis'; // forensic sweep begins, centred and deliberately restrained
 
 export const SOUND_NAMES: SoundName[] = [
+  'disconnect', 'reconnect', 'sensor', 'restart',
   'confirm',
   'denied',
   'spread',
@@ -313,6 +318,22 @@ function encryptSting(ctx: AudioContext, out: AudioNode, heavy: boolean): void {
 type Synth = (ctx: AudioContext, out: AudioNode) => void;
 
 const SYNTHS: Record<SoundName, Synth> = {
+  disconnect(ctx, out) {
+    noiseBurst(ctx, out, 0.055, 0.12, 'bandpass', 1700);
+    tone(ctx, out, 'triangle', 420, 0.12, 0.005, 0.16, 120);
+  },
+  reconnect(ctx, out) {
+    noiseBurst(ctx, out, 0.035, 0.09, 'bandpass', 2200);
+    tone(ctx, out, 'sine', 280, 0.14, 0.02, 0.2, 660);
+  },
+  sensor(ctx, out) {
+    tone(ctx, out, 'sine', 880, 0.1, 0.01, 0.16);
+    tone(ctx, out, 'triangle', 1320, 0.07, 0.12, 0.2);
+  },
+  restart(ctx, out) {
+    tone(ctx, out, 'sine', 140, 0.12, 0.03, 0.65, 560);
+    tone(ctx, out, 'triangle', 700, 0.06, 0.45, 0.25);
+  },
   confirm(ctx, out) {
     // A clean two-note cyan blip.
     tone(ctx, out, 'triangle', 660, 0.18, 0.005, 0.09);
