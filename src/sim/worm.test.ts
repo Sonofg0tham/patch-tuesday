@@ -11,7 +11,7 @@ import {
   stepTurn,
 } from './worm';
 
-const CONFIG = SIM_CONFIG;
+const CONFIG = { ...SIM_CONFIG, spreadChance: 0.6, encryptAfterTurns: 3 };
 
 const NO_DWELL = { ...SIM_CONFIG, dwellTurns: 0 };
 
@@ -65,6 +65,53 @@ describe('dwell time', () => {
     const infected = Object.values(state.nodes).filter((n) => n.state === 'infected');
     expect(infected).toHaveLength(1);
   });
+
+  it('hands over an estate already lost when dwell encrypts the domain controller', () => {
+    const topology = makeTopology([{ id: 'DC', type: 'domain-controller' }], []);
+    const state = createInitialState(topology, 'dwell-dc-loss', {
+      ...SIM_CONFIG,
+      patientZeroType: 'domain-controller',
+      dwellTurns: 1,
+      encryptAfterTurns: 1,
+      spreadChance: 0,
+    });
+
+    expect(state.status).toBe('lost');
+    expect(state.lossReason).toBe('domain-controller');
+    expect(state.turn).toBe(1);
+  });
+
+  it('hands over an estate already lost when dwell crosses the blast threshold', () => {
+    const topology = makeTopology([{ id: 'A' }, { id: 'B' }, { id: 'C' }], [
+      ['A', 'B'],
+      ['B', 'C'],
+    ]);
+    const state = createInitialState(topology, 'dwell-blast-loss', {
+      ...SIM_CONFIG,
+      dwellTurns: 2,
+      encryptAfterTurns: 1,
+      spreadChance: 1,
+      spreadAttemptCap: 3,
+    });
+
+    expect(state.status).toBe('lost');
+    expect(state.lossReason).toBe('blast-radius');
+    expect(state.turn).toBe(1);
+  });
+
+  it('keeps an ordinary below-threshold dwell handover active', () => {
+    const topology = makeTopology([{ id: 'WS' }], []);
+    const state = createInitialState(topology, 'dwell-active', {
+      ...SIM_CONFIG,
+      dwellTurns: 1,
+      encryptAfterTurns: 10,
+      spreadChance: 0,
+    });
+
+    expect(state.status).toBe('playing');
+    expect(state.lossReason).toBeUndefined();
+    expect(state.turn).toBe(1);
+  });
 });
 
 describe('spread mechanics', () => {
@@ -114,9 +161,9 @@ describe('spread mechanics', () => {
     expect(events.filter((e) => e.kind === 'infected')).toHaveLength(0);
   });
 
-  it('rolls against every clean neighbour in one turn (per-cable spread)', () => {
-    // A hub infected, three clean leaves: with a high chance it should infect
-    // more than one in a single turn, which one-cable spread could never do.
+  it('caps an infected hub at one spread attempt per turn', () => {
+    // A hub infected, three clean leaves: even with a guaranteed successful
+    // roll, its scheduler contribution is one target rather than one per cable.
     const topology = makeTopology(
       [{ id: 'HUB' }, { id: 'L1' }, { id: 'L2' }, { id: 'L3' }],
       [['HUB', 'L1'], ['HUB', 'L2'], ['HUB', 'L3']],
@@ -131,10 +178,10 @@ describe('spread mechanics', () => {
       },
       { seed: 'hub' },
     );
-    const next = stepTurn(state, topology, greedy).nextState;
-    expect(next.nodes.L1.state).toBe('infected');
-    expect(next.nodes.L2.state).toBe('infected');
-    expect(next.nodes.L3.state).toBe('infected');
+    const result = stepTurn(state, topology, greedy);
+    const infectedLeaves = ['L1', 'L2', 'L3'].filter((id) => result.nextState.nodes[id].state === 'infected');
+    expect(result.events.filter((event) => event.kind === 'spread-attempt')).toHaveLength(1);
+    expect(infectedLeaves).toHaveLength(1);
   });
 });
 

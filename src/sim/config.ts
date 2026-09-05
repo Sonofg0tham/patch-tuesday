@@ -10,6 +10,8 @@ export interface SimConfig {
   // --- The threat ---
   /** Base chance an infected node infects a clean neighbour it reaches. */
   spreadChance: number;
+  /** Maximum number of spread attempts across the estate in one hour. */
+  spreadAttemptCap: number;
   /** Turns a node stays infected before it encrypts (and stops spreading). */
   encryptAfterTurns: number;
   /** Which node type patient zero is drawn from. */
@@ -55,15 +57,16 @@ export interface SimConfig {
 }
 
 export const SIM_CONFIG: SimConfig = {
-  spreadChance: 0.6,
-  encryptAfterTurns: 3,
+  spreadChance: 1,
+  spreadAttemptCap: 3,
+  encryptAfterTurns: 7,
   patientZeroType: 'workstation',
   patientZeroEdgeOnly: true,
   lossBlastRadius: 0.6,
-  dwellTurns: 3,
+  dwellTurns: 2,
 
   apPerTurn: 2,
-  backupCredits: 2,
+  backupCredits: 3,
   emergencyApBonus: 2,
   actionCosts: {
     scan: 1,

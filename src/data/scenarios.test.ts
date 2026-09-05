@@ -22,4 +22,25 @@ describe('scenarios', () => {
     expect(a.nodes.map((n) => n.id)).toEqual(b.nodes.map((n) => n.id));
     expect(RANDOM.build('seed-b').name).not.toBe(a.name);
   });
+
+  it('provides public handover copy and exactly two first priorities', () => {
+    expect(MERIDIAN.handover).toEqual({
+      alert: 'Ransomware indicators confirmed across the HQ estate.',
+      priorities: [
+        'Establish trustworthy visibility.',
+        'Protect the Domain Controller and backup path.',
+      ],
+    });
+    expect(RANDOM.handover).toEqual({
+      alert: 'Ransomware indicators confirmed across an unfamiliar estate.',
+      priorities: [
+        'Map coverage gaps before trusting a clean display.',
+        'Break observed propagation routes.',
+      ],
+    });
+    for (const scenario of [MERIDIAN, RANDOM]) {
+      expect(scenario.handover.alert).not.toMatch(/patient zero|initial access|infected node/i);
+      expect(scenario.handover.priorities).toHaveLength(2);
+    }
+  });
 });

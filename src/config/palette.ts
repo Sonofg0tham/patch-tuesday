@@ -8,10 +8,11 @@ export const palette = {
   base: '#0b0e14', // near-black background, the war room in the dark
   accent: '#4cc9f0', // cold cyan: the defence, the UI, clean nodes
   infection: '#f72585', // hot magenta, reserved exclusively for the threat
+  pressure: '#f5a524', // amber: uncertainty, forecast risk and human pressure
   text: '#c5cdd8', // cool grey UI text
 
   // Derived tones for the board.
-  nodeBase: '#2f8fb3', // resting node, muted so hover and selection pop
+  nodeBase: '#4a6d80', // resting node: steel with a cyan cast, so hover, selection and infection all have headroom above it
   nodeHover: '#4cc9f0', // hover matches the accent
   nodeSelected: '#c8f0fc', // selected, near-white cyan
   ground: '#11161f', // board floor, a step up from the background

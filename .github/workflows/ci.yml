@@ -1,10 +1,14 @@
 name: CI
 
-# Run on every pull request that targets main, and again on main itself after
+# Run on every pull request whatever it targets, and again on main itself after
 # a merge, so a broken change can never sit unnoticed on the default branch.
+#
+# The pull_request trigger was originally filtered to `branches: [main]`. That
+# left a hole: a stacked PR (one phase branch based on the previous one, before
+# it has merged) got no checks at all, which is exactly when you most want them.
+# Branch protection is unaffected, because that keys off the job name below.
 on:
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 

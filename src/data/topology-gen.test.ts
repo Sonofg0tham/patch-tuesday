@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { generateTopology } from './topology-gen';
-import { NODE_TYPES, type Topology } from './topology';
+import { loadTopology, NODE_TYPES, type Topology } from './topology';
 import { GEN_CONFIG } from '../sim/config';
 
 // Breadth-first reachability: a board is fully connected iff every node is
@@ -86,10 +86,18 @@ describe('procedural topology generator', () => {
     const b = generateTopology('repeat-me');
     const shape = (t: Topology): string =>
       JSON.stringify({
-        nodes: t.nodes.map((n) => [n.id, n.type, n.edr, n.col, n.row]),
+        nodes: t.nodes.map((n) => [n.id, n.type, n.edr, n.col, n.row, n.segment]),
         cables: t.cables.map((c) => [c.a, c.b]),
       });
     expect(shape(a)).toBe(shape(b));
+  });
+
+  it('retains a stable non-empty segment identifier on generated and shipped nodes', () => {
+    for (const seed of SEEDS) {
+      const topology = generateTopology(seed);
+      expect(topology.nodes.every((node) => node.segment.length > 0)).toBe(true);
+    }
+    expect(loadTopology().nodes.every((node) => node.segment.length > 0)).toBe(true);
   });
 
   it('holds the balance-gated tree density (no cross-segment cycles) by default', () => {

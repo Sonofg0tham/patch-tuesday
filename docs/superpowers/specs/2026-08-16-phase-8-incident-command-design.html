@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Patch Tuesday Phase 8: Incident Command</title>
+<style>
+  :root {
+    --bg: #eef4f6;
+    --ink: #101a20;
+    --muted: #526671;
+    --accent: #087a9e;
+    --threat: #c20e62;
+    --pressure: #8a5c00;
+    --card: #ffffff;
+    --border: #b9d2dc;
+    --code: #e3eef2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0e14;
+      --ink: #c5cdd8;
+      --muted: #91a2ae;
+      --accent: #4cc9f0;
+      --threat: #f72585;
+      --pressure: #f5a524;
+      --card: #111923;
+      --border: #245368;
+      --code: #101b25;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { color-scheme: light dark; }
+  body {
+    margin: 0;
+    padding: 2.5rem 1.25rem 5rem;
+    background:
+      linear-gradient(90deg, transparent 0 31px, color-mix(in srgb, var(--accent) 7%, transparent) 32px),
+      var(--bg);
+    color: var(--ink);
+    font: 17px/1.68 "Fira Code", "Cascadia Code", Consolas, monospace;
+  }
+  main { max-width: 70ch; margin: 0 auto; }
+  header { padding: 1.25rem 0 1.5rem; border-top: 4px solid var(--accent); }
+  .kicker {
+    color: var(--accent);
+    font-size: .78rem;
+    font-weight: 700;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+  }
+  h1, h2, h3 {
+    font-family: "Chakra Petch", Bahnschrift, sans-serif;
+    line-height: 1.2;
+  }
+  h1 { font-size: clamp(2rem, 6vw, 3.4rem); letter-spacing: .035em; margin: .4rem 0 .65rem; }
+  h2 {
+    font-size: 1.45rem;
+    margin: 2.7rem 0 .85rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border);
+    color: var(--accent);
+  }
+  h3 { font-size: 1.1rem; margin: 1.8rem 0 .55rem; }
+  p, li { margin: 0 0 .9rem; }
+  ul, ol { padding-left: 1.45rem; }
+  .lead { color: var(--muted); font-size: 1.04rem; max-width: 62ch; margin-bottom: 1.5rem; }
+  .meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: .55rem 1rem;
+    padding: 1rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: .82rem;
+  }
+  .meta span { color: var(--muted); display: block; font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; }
+  .callout {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 0 3px 3px 0;
+    padding: 1rem 1.1rem;
+    margin: 1.35rem 0;
+  }
+  .callout.threat { border-left-color: var(--threat); }
+  .callout.pressure { border-left-color: var(--pressure); }
+  .label {
+    display: inline-block;
+    margin-bottom: .35rem;
+    color: var(--accent);
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .threat .label { color: var(--threat); }
+  .pressure .label { color: var(--pressure); }
+  code, pre {
+    font-family: "Fira Code", "Cascadia Code", Consolas, monospace;
+    font-size: .91em;
+    background: var(--code);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+  }
+  code { padding: .1em .35em; }
+  pre { padding: 1rem; overflow-x: auto; line-height: 1.55; }
+  pre code { padding: 0; border: 0; background: none; }
+  table { border-collapse: collapse; width: 100%; margin: 1.15rem 0 1.5rem; font-size: .9rem; }
+  th, td { text-align: left; vertical-align: top; padding: .65rem .7rem; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 700; }
+  .status { color: var(--accent); font-weight: 700; }
+  .warning { color: var(--pressure); font-weight: 700; }
+  .danger { color: var(--threat); font-weight: 700; }
+  a { color: var(--accent); }
+  .checklist { list-style: none; padding-left: 0; }
+  .checklist li { padding-left: 1.5rem; position: relative; }
+  .checklist li::before { content: "□"; position: absolute; left: 0; color: var(--accent); }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); color: var(--muted); font-size: .8rem; }
+  @media (max-width: 560px) {
+    body { padding: 1.5rem .9rem 3rem; }
+    table { display: block; overflow-x: auto; }
+    .meta { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="kicker">Phase 8 design specification · 16 August 2026</div>
+    <h1>Incident Command</h1>
+    <p class="lead">A measured redesign of Patch Tuesday's incident arc, player guidance, enemy-turn theatre, Three.js state language and synthesised sound.</p>
+    <div class="meta">
+      <div><span>Status</span>Approved for implementation</div>
+      <div><span>Branch</span><code>phase-8-incident-command</code></div>
+      <div><span>Identity</span>Forensic war-room industrial</div>
+      <div><span>Delivery</span>One Phase 8 pull request, small conventional commits</div>
+    </div>
+  </header>
+
+  <div class="callout">
+    <div class="label">Decision</div>
+    <p>Reopen the locked v1 pacing and win condition. Keep the existing incident-response mechanics, deterministic simulation, accessibility contract and zero-asset rule. Retune through measured bot sweeps rather than feel.</p>
+  </div>
+
+  <h2>1. Why Phase 8 exists</h2>
+  <p>The current build is technically healthy. TypeScript, lint, 104 tests and the production build pass. The Phase 7 renderer also holds a large frame-time margin.</p>
+  <p>The game still finishes before its best systems mature. A fresh 1,000-run measurement put the competent reference bot at 4.7 turns and the random bot at 5.1 turns. Business pressure, service recovery and most of the adaptive score rarely get enough time to matter. Phase 8 keeps the 12 to 18 human-minute target. Its final bot proxy bands expect greedy runs to average T+10h to T+14h and random-legal runs to average T+10h to T+16h.</p>
+
+  <table>
+    <thead><tr><th>Area</th><th>Current evidence</th><th>Phase 8 response</th></tr></thead>
+    <tbody>
+      <tr><td>Pacing</td><td>Most runs finish around T+05h.</td><td>Schedule and cap worm attempts, add declaration and recovery decisions.</td></tr>
+      <tr><td>Guidance</td><td>One dim help line and a basic inspector.</td><td>Handover, live objective, consequence previews and an incident timeline.</td></tr>
+      <tr><td>Enemy turn</td><td>Most simulation events are recorded but not presented.</td><td>Drive a bounded resolution sequence from the real event list.</td></tr>
+      <tr><td>Visual state</td><td>Infection and encryption lean too heavily on colour and glow.</td><td>Add procedural glyphs, physical deformation and clearer hierarchy.</td></tr>
+      <tr><td>Audio</td><td>Five actions share one confirm sound. Major score layers arrive near defeat.</td><td>Give actions distinct signatures and drive tension from observable risk.</td></tr>
+      <tr><td>Layout</td><td>1024px at 150% text scale leaves a narrow board strip.</td><td>Use a measured playfield safe area and a responsive asset drawer.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>2. Product and design direction</h2>
+  <p>Patch Tuesday remains a desktop, mouse-first and fully keyboard-operable tactics game for players interested in incident response. There are no decision timers and no twitch inputs.</p>
+  <p>The visual direction is a physical procedural SOC tabletop. The network is a working model on a dark incident desk. The surrounding DOM interface reads as incident-control equipment, not a website laid over a game.</p>
+  <p>Chakra Petch remains the display face. Fira Code remains the body, data and document face. Cyan means defence or verified control. Amber means uncertainty, forecast risk or human and business pressure. Magenta appears only for compromise that the player can observe and truthful threat events that expose it.</p>
+  <p>The memorable beat is the forensic telemetry sweep after End Turn. The room quietens, activity crosses the board in truthful order, the timeline records what the player could observe, and the next decision starts from a clear situation report.</p>
+
+  <h2>3. Scope</h2>
+  <h3>In scope</h3>
+  <ul>
+    <li>Reworked worm tempo, containment declaration and recovery completion.</li>
+    <li>A short incident handover and persistent contextual guidance.</li>
+    <li>A situation panel, action consequence previews and visible event history.</li>
+    <li>An event-driven threat-resolution director.</li>
+    <li>Action-specific procedural Three.js effects and Web Audio signatures.</li>
+    <li>Missing state cues, clearer fog language and corrected visual hierarchy.</li>
+    <li>Safe layout behaviour at desktop widths and every shipped text scale.</li>
+    <li>PIR chronology fixes and new containment and recovery findings.</li>
+    <li>Updated measurements, documentation and proof captures.</li>
+  </ul>
+
+  <h3>Still parked</h3>
+  <p>STALKER, LOUDMOUTH, insider events, campaign progression, daily seeds, replay mode, new topology themes, gamepad, touch controls, multiplayer and any backend remain in the v2 parking lot.</p>
+
+  <div class="callout pressure">
+    <div class="label">Asset decision</div>
+    <p>Imported model or texture files would break the project's zero-asset and licence rules, and they do not solve the measured problems. Blender and Meshy are therefore outside this phase. Phase 8 uses procedural Three.js geometry, canvas-painted maps and Web Audio only.</p>
+  </div>
+
+  <h2>4. The new incident arc</h2>
+  <p>The run becomes a sequence of decisions with a visible beginning, escalation and close. The player can still move quickly when the board is understood. The design does not force empty observation turns.</p>
+
+  <h3>Handover</h3>
+  <p>Beginning an incident opens a short, skippable handover. A synthesised pager sounds, the time reads 03:12, and the SOC summary reports only information available at detection: confirmed alerts, EDR coverage, 2 AP per hour, three backup credits, the Domain Controller loss condition and the 60% blast-radius loss line.</p>
+  <p>The inherited dwell remains hidden until the PIR, preserving the existing reveal. Reduced motion shows the same information without staged text or camera movement.</p>
+
+  <h3>Active response</h3>
+  <p>The player observes, predicts, acts and ends the hour. A persistent objective names the current job, such as establishing visibility, breaking a known propagation route or protecting crown-jewel services. It explains priorities without choosing a node or action for the player.</p>
+
+  <h3>Containment declaration</h3>
+  <p>When no infection is visible, a new <strong>Declare containment</strong> control becomes available. It costs no AP, discards unused AP and commits the current response hour.</p>
+  <ul>
+    <li>If hidden infection remains, the declaration fails. The normal order resolves once: business override, scheduled spread, infection ageing and encryption, isolation ageing, pressure, downtime score and AP refresh. The run remains in active response unless a loss condition fires. The declaration confirms uncertainty but never localises the hidden source or target.</li>
+    <li>If no infection remains, containment is confirmed immediately. No threat, pressure or downtime step runs for the declaration. The run enters recovery with a fresh 2 AP.</li>
+  </ul>
+  <p>This makes fog of war matter at the exact moment the player wants to trust the board. Deploying sensors now supports a real decision instead of serving only as a reveal tool.</p>
+
+  <h3>Recovery</h3>
+  <p>The worm stops spreading. Only Reconnect and Restore are available. The player may spend remaining backup credits, reconnect isolated services and reduce final impact. A <strong>File review</strong> control is available immediately, so recovery never becomes compulsory clicking.</p>
+  <p>The first Phase 8 lock retained two backup credits. With dwell two and spread chance 1.00, a live estate reaches detection with at least three infections, so two restores made NEAR MISS structurally unreachable. The all-four-ratings acceptance check reopened only this dependency. Three credits now ship; AP, restore cost, threat tempo, pressure and loss rules remain unchanged.</p>
+  <p><strong>Advance recovery hour</strong> discards unused AP, advances the clock and refreshes 2 AP. It never spreads or ages infection, but isolation ageing, downtime score, pressure and any pressure-driven business override still resolve. <strong>File review</strong> costs no AP and changes the run from playing to won.</p>
+  <p>Filing while a router, server, backup node or Domain Controller remains isolated records an unrecovered critical-service finding. The severity is Medium for a router or server and High for a backup node or Domain Controller. A premature declaration is High. Either finding caps the rating at CONTAINED.</p>
+  <p>The final rating is deterministic. A loss is TOTAL LOSS. A win with at least 25% final blast radius is REPORTABLE INCIDENT. A lower-blast-radius win is CONTAINED when any encryption happened after detection, containment was declared prematurely or a critical service remained isolated at filing. Only a win with none of those conditions is NEAR MISS.</p>
+
+  <h2>5. Threat tempo and balance</h2>
+  <p>Before Phase 8, the worm attempted every clean live cable from every infected node. Once a hub was involved, the incident expanded too quickly to produce a tactical arc.</p>
+  <p>Phase 8 replaces that scheduler with the measured live rules:</p>
+  <ol>
+    <li>Sort true infected, non-isolated source IDs. For each source, sort its true clean, non-isolated neighbours connected by a live cable.</li>
+    <li>Use the seeded RNG to choose one eligible target uniformly for each source. A source contributes at most one candidate in an hour, so high-degree nodes gain options but not extra attempts.</li>
+    <li>Shuffle those source-target candidates with a seeded Fisher-Yates pass.</li>
+    <li>Take the first three candidates and resolve each spread attempt at the locked 1.00 chance in that shuffled order.</li>
+    <li>Age infection and encrypt a node after seven infected turns.</li>
+  </ol>
+  <p>The measured live lock is an attempt cap of three, dwell of two, spread chance of 1.00 and infection lifetime of seven.</p>
+
+  <h3>Original tuning order</h3>
+  <p>The implementation began with the following search order. It remains here as the historical plan; later controller-authorised extensions are recorded in the measured lock.</p>
+  <ol>
+    <li>Sweep global attempt caps of three, four and five.</li>
+    <li>If no result passes, sweep dwell at two and three using the best cap.</li>
+    <li>Only then sweep spread chance at 0.55, 0.60 and 0.65.</li>
+    <li>Change one lever per measured pass and record the before and after result.</li>
+  </ol>
+
+  <h3>New balance gate</h3>
+  <table>
+    <thead><tr><th>Measure</th><th>Required band</th></tr></thead>
+    <tbody>
+      <tr><td>Greedy raw survival</td><td>Reported diagnostic, no gate</td></tr>
+      <tr><td>Greedy sub-reportable containment (won with final blast radius below 25%)</td><td>45% to 70%</td></tr>
+      <tr><td>Random-legal bot win rate</td><td>15% to 30%</td></tr>
+      <tr><td>Greedy average finish</td><td>T+10h to T+14h</td></tr>
+      <tr><td>Random average finish</td><td>T+10h to T+16h</td></tr>
+      <tr><td>Runs finishing before T+06h</td><td>Below 15%</td></tr>
+      <tr><td>Runs still active after T+16h</td><td>Below 25%</td></tr>
+      <tr><td>Undefended boards reaching 60% loss</td><td>At least 80%</td></tr>
+      <tr><td>Greedy runs reaching 80% business pressure</td><td>20% to 50%</td></tr>
+    </tbody>
+  </table>
+  <p>Filing sets the simulation status to won even when the final blast radius makes the incident reportable. Raw greedy survival therefore remains visible as a diagnostic, while the competent outcome gate measures won runs that finish below 25% blast radius. A blast radius of exactly 25% is reportable and does not count toward that gate.</p>
+  <h3>Backup-credit correction</h3>
+  <p>The superseded two-credit lock passed the pacing gate with raw greedy survival 97.30%, greedy sub-reportable containment 69.75%, random wins 27.82%, greedy and random finishes T+12.63h and T+14.86h, early finishes 0.00%, late runs 21.86%, undefended loss 100.00% and greedy high pressure 25.40%. It failed the separate rating-reachability acceptance condition because three live infections could not be eradicated with two restores.</p>
+  <p>The controller-authorised three-credit rerun used 4,000 greedy, 4,000 random-legal and 4,000 undefended seeds. It measured raw greedy survival 98.500%, greedy sub-reportable containment 63.450%, random wins 28.075%, greedy finish T+13.16925h, random finish T+15.014h, early finishes 0.000%, late runs 20.875%, undefended loss 100.000% and greedy high pressure 20.700%. Against two credits, the deltas were +1.200, -6.300 and +0.250 percentage points for the three outcome rates; +0.54175h and +0.155h for finish times; no movement in early finish or undefended loss; -0.9875 percentage points for late runs; and -4.700 percentage points for high pressure. Every pacing band remains green, and a legal public-action response now earns NEAR MISS.</p>
+  <p>Human acceptance is 12 to 18 minutes for a competent run. Bots measure decision hours, not wall time. The product gate assumes roughly 60 to 90 seconds of human thought plus a 1.4 to 4.5 second resolution beat per hour, then verifies the estimate through first-time and returning-player sessions.</p>
+
+  <h2>6. Incident command interface</h2>
+  <h3>Situation panel</h3>
+  <p>The upper-left console leads with the current incident phase, objective and observed threat summary. AP, backups, impact and business pressure remain close together. Seed and FPS move to secondary diagnostics.</p>
+  <p>The active objective follows this visible-information priority: prevent known encryption when a visible infection has one hour left, relieve business pressure at 80% or above, break a known route while visible infection remains, verify containment while no infection is visible but blind spots remain, then declare containment when the observed estate is clear. Recovery prioritises isolated critical services, then restorable loss, then filing the review.</p>
+
+  <h3>Decision panel</h3>
+  <p>Selecting a node explains the consequence of each relevant action using visible information only. Examples include links cut, pressure added per hour, impact added per hour, backup credit consumed and known time to encryption. An uncovered node says that infection status is uncertain.</p>
+  <p>Actions stay discoverable and clickable. An invalid action answers with a reason and spends nothing. Deploy Sensor no longer charges AP on a node already covered or revealed. A patch probe is a valid adverse outcome: it spends 1 AP, aborts the patch, reveals the infection and records successful detection instead of a blocked action.</p>
+
+  <h3>Forecast and asset register</h3>
+  <p>Threat forecast becomes on by default. It draws the existing visible risk targets and the visible source-to-target routes. Blind spots remain blind. The asset register gains live text and glyph state for infection, encryption, patch, isolation and EDR coverage, including updated accessible names.</p>
+
+  <h3>Incident timeline</h3>
+  <p>A compact timeline shows the latest eight observed entries while the full run history remains available to the recorder and PIR. It records successful player actions, accepted patch probes, visible spread, encryption, overrides, containment declarations and recovery decisions.</p>
+  <p>Hidden activity is grouped into one telemetry-uncertainty entry per resolution. It is never localised to a node, cable or side of the board. The panel uses <code>role="log"</code>, <code>aria-live="polite"</code> and addition-only announcements; one concise phase summary is announced rather than every decorative pulse.</p>
+
+  <h3>Debug boundary</h3>
+  <p>The true-state debug panel is removed from production controls. It is available only in development or with an explicit <code>?debug=1</code> query parameter. Production help no longer advertises the key.</p>
+
+  <h2>7. Threat-resolution theatre</h2>
+  <p>The resolution director consumes the real ordered <code>TurnEvent[]</code>, the visible state before the turn and the visible state after it. The simulation remains independent of presentation.</p>
+  <ol>
+    <li>Lock player input and change End Turn to <strong>Resolving</strong>.</li>
+    <li>Play a short analysis pulse for the hour.</li>
+    <li>Trace observable attempts from their real source to their real target.</li>
+    <li>Aggregate hidden attempts into an unlocalised telemetry-gap beat.</li>
+    <li>Land visible infections, then encryption and business overrides in event order.</li>
+    <li>Publish one concise accessible summary and return control.</li>
+  </ol>
+  <p>The normal sequence lasts between 1.4 and 4.5 seconds. A skip control completes every visual state safely. Reduced motion collapses travel and camera movement into brief state changes while retaining shape, text and sound cues.</p>
+
+  <h2>8. Three.js visual work</h2>
+  <ul>
+    <li>Add a procedural threat glyph plate to visibly infected nodes.</li>
+    <li>Add a small hinged or displaced hardware panel to encrypted nodes, giving them a genuine silhouette change.</li>
+    <li>Desaturate uncovered nodes and add a static unknown marker without revealing hidden infection.</li>
+    <li>Lower healthy cable and EDR luminance so threat and selection lead the image.</li>
+    <li>Give selection corner brackets, a local light pool and a short asset label.</li>
+    <li>Paint restrained floor-zone stencils from topology segments using canvas textures.</li>
+    <li>Use the real event route for spread traces. Remove alphabetical and guessed-source animation.</li>
+    <li>Add pooled effects for sensor ping, cable isolation, reconnection surge, patch checksum, restore boot and emergency authorisation.</li>
+  </ul>
+  <p>The extra glyphs, panels and effects are small non-instanced overlays around the existing instanced chassis. With only 24 nodes, they preserve the current performance margin without abandoning instancing.</p>
+
+  <h3>Playfield-safe layout</h3>
+  <p>The renderer measures the visible command console and asset register, then frames the topology inside the remaining safe rectangle. Below 1200 CSS pixels, or when text scaling makes the centre too narrow, the asset register becomes a non-modal keyboard-accessible drawer. Its trigger exposes <code>aria-controls</code> and <code>aria-expanded</code>; the closed drawer is hidden and inert; Escape closes it and returns focus to the trigger; Tab is not trapped. The command console keeps its core status and actions visible.</p>
+  <p>At 390px the game presents a clear desktop-controls notice and a usable menu. Touch gameplay remains out of scope.</p>
+
+  <h2>9. Audio direction</h2>
+  <p>The existing score, reverb and ambience stay. Phase 8 fixes how they are driven and makes player actions sound materially different. Scenario selection may still navigate to the run URL. The run-page handover opens on an <strong>Accept handover</strong> button; activating that button is the required gesture that unlocks Web Audio and starts the pager in the same document. Failure to unlock audio never blocks the handover.</p>
+  <ul>
+    <li>Handover: pager chirp, distant phone and room wake-up.</li>
+    <li>Deploy Sensor: tight radar ping with a clean upward lock.</li>
+    <li>Isolate: relay clacks followed by a short power drop.</li>
+    <li>Reconnect: controlled power return moving from low to high.</li>
+    <li>Patch: a dry verification pattern ending in a sealed confirm.</li>
+    <li>Restore: drive spin, boot pulse and stable service tone.</li>
+    <li>Emergency budget: secure-line clack and an uncomfortable authorisation stamp.</li>
+    <li>Containment declaration: the score ducks under a forensic scan. Failure stutters back into the threat motif.</li>
+  </ul>
+  <p>Every spread attempt receives the promised pulse, but hidden attempts are aggregated and centred so stereo position never leaks secret state. Large overlaps pass through a master dynamics compressor to prevent clipping.</p>
+  <p>Score intensity is recalculated from observable blast radius, visible encryption urgency, business pressure and incident phase. Recovery releases tension without playing the final cadence. The cadence belongs to the filed PIR.</p>
+
+  <h2>10. Architecture and data flow</h2>
+  <p>The new behaviour stays in small modules rather than expanding <code>src/main.ts</code>, <code>src/render/board.ts</code> and <code>src/ui/style.css</code> further.</p>
+  <table>
+    <thead><tr><th>Module</th><th>Responsibility</th></tr></thead>
+    <tbody>
+      <tr><td><code>src/sim/pacing.ts</code></td><td>Select eligible spread attempts and expose sweep metrics.</td></tr>
+      <tr><td><code>src/sim/game.ts</code></td><td>Own active, recovery and terminal transitions plus new actions.</td></tr>
+      <tr><td><code>src/sim/types.ts</code></td><td>Add incident phase and containment or recovery events.</td></tr>
+      <tr><td><code>src/sim/telemetry.ts</code></td><td>Project true events into fog-safe observable timeline and theatre events.</td></tr>
+      <tr><td><code>src/ui/handover.ts</code></td><td>Render the skippable incident handover.</td></tr>
+      <tr><td><code>src/ui/situation.ts</code></td><td>Derive objective, observed summary and safe action consequences.</td></tr>
+      <tr><td><code>src/ui/timeline.ts</code></td><td>Render visible event history and accessible summaries.</td></tr>
+      <tr><td><code>src/render/turn-director.ts</code></td><td>Sequence events, skip safely and coordinate callbacks.</td></tr>
+      <tr><td><code>src/render/action-effects.ts</code></td><td>Pool the six procedural player-action effects.</td></tr>
+      <tr><td><code>src/render/state-markers.ts</code></td><td>Own glyphs, unknown markers, labels and encrypted panels.</td></tr>
+      <tr><td><code>src/audio/audio.ts</code></td><td>Expose distinct action and phase sound keys.</td></tr>
+    </tbody>
+  </table>
+
+  <p>The application flow is:</p>
+  <pre><code>player action
+  → pure simulation result
+  → run recorder
+  → immediate action effect and timeline entry
+
+end hour or declare containment
+  → pure simulation result with ordered events
+  → visible-event projection
+  → turn director
+  → board, audio, timeline and accessible summary
+  → next phase or next decision</code></pre>
+
+  <p>The renderer and normal UI never receive true state except through the existing derived visible view. A dedicated projection function decides which event details can be presented. It receives direct unit tests for fog leaks.</p>
+
+  <h2>11. Failure handling and accessibility</h2>
+  <ul>
+    <li>If Web Audio is unavailable or suspended, every interaction remains visible and playable.</li>
+    <li>If post-processing steps down, state glyphs and physical deformation remain.</li>
+    <li>If an animation is skipped or the tab loses focus, the director applies the final state once and releases input.</li>
+    <li>Reduced motion removes travel, camera direction, flicker and ambient drift while preserving state changes.</li>
+    <li>No visual effect flashes more than three times in one second.</li>
+    <li>All controls remain real DOM buttons with visible focus and keyboard shortcuts.</li>
+    <li>Every live state is words plus shape or glyph. Colour is supporting information.</li>
+    <li>Normal text meets WCAG AA. Secondary text uses a 0.875rem practical floor and sufficient contrast.</li>
+    <li>Controls and documents survive 200% text resize. At 400% reflow, the menu and desktop-controls notice retain all information without horizontal page scrolling.</li>
+    <li>Settings additions migrate from existing localStorage defaults without breaking stored runs.</li>
+  </ul>
+
+  <h2>12. Verification</h2>
+  <h3>Automated</h3>
+  <ul class="checklist">
+    <li>Typecheck, lint, all unit tests and production build pass.</li>
+    <li>New pacing sweep passes every balance band over at least 4,000 seeds.</li>
+    <li>Deterministic replay reproduces attempt selection, declaration and recovery.</li>
+    <li>Fog-projection tests prove hidden node identity, source, target and success do not leak.</li>
+    <li>Every action and phase sound key is registered and safe before audio unlock.</li>
+    <li>Every animation can finish normally and through skip without duplicate callbacks.</li>
+    <li>The 120-frame high-quality bench stays below 3ms average and 8ms worst on the verification machine.</li>
+  </ul>
+
+  <h3>Browser and playtest</h3>
+  <ul class="checklist">
+    <li>Fresh first run, returning run, win, loss, failed declaration and early PIR filing all complete.</li>
+    <li>Mouse and keyboard paths cover the entire run.</li>
+    <li>Desktop captures at 1600×900 and 1024×768 show no board occlusion.</li>
+    <li>150% and 200% text, high contrast, reduced motion and all render tiers remain usable.</li>
+    <li>A 400% reflow check preserves the full menu and desktop-controls notice without horizontal page scrolling.</li>
+    <li>A 390px capture shows the intended desktop notice without overflow.</li>
+    <li>Greyscale captures distinguish clean, unknown, infected, encrypted, patched, isolated and selected nodes.</li>
+    <li>A clean console is maintained through quality switching and repeated incidents.</li>
+    <li>A headphone pass confirms action identity, hidden-attempt privacy, mix headroom and score progression.</li>
+    <li>A first-time player can state the loss conditions, current objective and likely consequence of their chosen action.</li>
+  </ul>
+
+  <h2>13. Delivery order</h2>
+  <ol>
+    <li>Amend <code>GAME_DESIGN.md</code> with the approved Phase 8 pacing and win-condition decision.</li>
+    <li>Add pacing instrumentation, new phases and simulation tests.</li>
+    <li>Run the sweep and lock the first configuration that passes every gate.</li>
+    <li>Build handover, situation guidance, forecast routes and timeline.</li>
+    <li>Build the event projection and turn-resolution director.</li>
+    <li>Add action effects, state markers and safe-area framing.</li>
+    <li>Complete the action audio, score drive and master mix.</li>
+    <li>Fix PIR chronology, recovery findings and production debug gating.</li>
+    <li>Run the full browser, accessibility, performance and playtest gate.</li>
+    <li>Update the measured Phase 8 values in <code>GAME_DESIGN.md</code>, README proof, credits audit and PR notes.</li>
+  </ol>
+
+  <div class="callout threat">
+    <div class="label">Definition of done</div>
+    <p>A run has a readable dramatic arc, each decision explains its consequence, End Turn is tense without leaking fog, the board remains legible without colour, the audio grows before the final turn, and the measured economy stays fair. Build success alone does not close Phase 8.</p>
+  </div>
+
+  <footer>Patch Tuesday · Phase 8 · Incident Command design specification</footer>
+</main>
+</body>
+</html>

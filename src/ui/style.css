@@ -142,6 +142,18 @@ canvas {
   min-height: 0;
   font-size: 11px;
   letter-spacing: 0.02em;
+  color: var(--accent, #4cc9f0);
+}
+
+#hud-notice[data-tone='defence'] {
+  color: var(--accent, #4cc9f0);
+}
+
+#hud-notice[data-tone='uncertainty'] {
+  color: var(--pressure, #f5a524);
+}
+
+#hud-notice[data-tone='threat'] {
   color: var(--infection, #f72585);
 }
 
@@ -151,7 +163,7 @@ canvas {
 }
 
 #hud-notice.active::before {
-  content: '⚠ ';
+  content: 'NOTICE: ';
 }
 
 #inspector {

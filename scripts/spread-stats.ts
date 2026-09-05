@@ -18,9 +18,11 @@ const line = (label: string, value: string | number): void => {
 
 console.log(`\nSpread stats over ${RUNS} undefended runs of "${topology.name}"`);
 console.log(`Threshold: ${Math.round(SIM_CONFIG.lossBlastRadius * 100)}% of ${topology.nodes.length} nodes encrypted`);
-console.log(`Config: spreadChance=${SIM_CONFIG.spreadChance}, encryptAfterTurns=${SIM_CONFIG.encryptAfterTurns}\n`);
+console.log(
+  `Config: spreadChance=${SIM_CONFIG.spreadChance}, spreadAttemptCap=${SIM_CONFIG.spreadAttemptCap}, dwellTurns=${SIM_CONFIG.dwellTurns}, encryptAfterTurns=${SIM_CONFIG.encryptAfterTurns}\n`,
+);
 
-line('Reached threshold', `${result.reached} (${Math.round((result.reached / RUNS) * 100)}%)`);
+line('Reached threshold', `${result.reached} (${(result.lossRate * 100).toFixed(1)}%)`);
 line('Fizzled (worm died out)', `${result.fizzled} (${Math.round(result.fizzleRate * 100)}%)`);
 line('Turns to 60%: mean', result.mean.toFixed(1));
 line('Turns to 60%: median', result.median);

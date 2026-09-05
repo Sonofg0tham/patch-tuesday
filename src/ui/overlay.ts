@@ -1,8 +1,8 @@
 // The DOM overlay: the node inspector and the live fps readout. All game UI
 // stays in the DOM; the canvas only ever draws the board.
 
-import type { NodeType, Topology, TopologyNode } from '../data/topology';
-import type { VisibleState } from '../sim/types';
+import type { NodeType } from '../data/topology';
+import type { ActionConsequence, NodeInspectionModel } from './situation';
 
 const TYPE_LABEL: Record<NodeType, string> = {
   workstation: 'Workstation',
@@ -12,42 +12,28 @@ const TYPE_LABEL: Record<NodeType, string> = {
   'domain-controller': 'Domain controller',
 };
 
-// What the player is shown, matching the fog: an uncovered infection reads clean.
-const STATUS_LABEL: Record<VisibleState, string> = {
-  clean: 'Status: clean',
-  infected: 'Status: INFECTED',
-  encrypted: 'Status: ENCRYPTED',
-  patched: 'Status: PATCHED (immune)',
-};
-
 export interface Overlay {
-  inspect(
-    node: TopologyNode | null,
-    status?: VisibleState,
-    isolated?: boolean,
-    sensored?: boolean,
-    isolationAge?: number,
-  ): void;
-  setFps(fps: number): void;
+  inspect(model: NodeInspectionModel | null): void;
+  preview(model: ActionConsequence | null): void;
 }
 
-export function createOverlay(topology: Topology): Overlay {
+export function createOverlay(): Overlay {
   const nameEl = mustFind('inspect-name');
   const typeEl = mustFind('inspect-type');
   const roleEl = mustFind('inspect-role');
   const edrEl = mustFind('inspect-edr');
   const statusEl = mustFind('inspect-status');
   const connEl = mustFind('inspect-connections');
-  const fpsEl = mustFind('overlay-fps');
+  const previewEl = mustFind('inspect-preview');
   const panel = mustFind('inspector');
 
   return {
-    inspect(node, status = 'clean', isolated = false, sensored = false, isolationAge = 0) {
-      if (node === null) {
+    inspect(model) {
+      if (model === null) {
         panel.classList.add('empty');
-        nameEl.textContent = 'No node selected';
+        nameEl.textContent = 'No equipment selected';
         typeEl.textContent = '';
-        roleEl.textContent = 'Click a node, or Tab through the asset register.';
+        roleEl.textContent = 'Select equipment on the board, or open the asset register. Hover an action to preview its effect.';
         edrEl.textContent = '';
         edrEl.className = 'inspect-edr';
         statusEl.textContent = '';
@@ -56,32 +42,58 @@ export function createOverlay(topology: Topology): Overlay {
         return;
       }
       panel.classList.remove('empty');
-      nameEl.textContent = node.label;
-      typeEl.textContent = TYPE_LABEL[node.type];
-      roleEl.textContent = node.role;
+      nameEl.textContent = model.label;
+      typeEl.textContent = TYPE_LABEL[model.type];
+      roleEl.textContent = model.role;
       // EDR status as words plus a state class, never colour alone. Coverage
       // can be built in or added by a deployed sensor.
-      const covered = node.edr || sensored;
-      edrEl.textContent = node.edr
+      const covered = model.coverage !== 'none';
+      edrEl.textContent = model.coverage === 'built-in'
         ? 'EDR: covered'
-        : sensored
+        : model.coverage === 'sensor'
           ? 'EDR: covered (sensor)'
           : 'EDR: NOT COVERED';
       edrEl.className = covered ? 'inspect-edr on' : 'inspect-edr off';
       // Visible infection status, again words plus a class. Isolation is noted
       // in words (its board cue is the missing cables), with its age in hours so
       // the player can see how much business pressure it is building.
-      const isolationNote = isolated ? ` · ISOLATED (${isolationAge}h)` : '';
-      statusEl.textContent = `${STATUS_LABEL[status]}${isolationNote}`;
-      statusEl.className = `inspect-status s-${status}`;
+      const isolationNote = model.isolated ? ` · OFFLINE / ISOLATED (${model.isolationAge}h)` : '';
+      const countdown = model.consequences.knownEncryptionInHours === undefined ? '' : ` · encryption in ${model.consequences.knownEncryptionInHours}h`;
+      statusEl.textContent = `${model.consequences.statusText}${isolationNote}${countdown}`;
+      statusEl.className = `inspect-status s-${model.visibleState}`;
 
-      const names = node.neighbours.map((id) => topology.byId.get(id)?.label ?? id);
-      connEl.textContent = `Connections (${names.length}): ${names.join(', ')}`;
+      connEl.textContent = `Connections (${model.connectionLabels.length}): ${model.connectionLabels.join(', ')}`;
     },
-    setFps(fps) {
-      fpsEl.textContent = `FPS: ${Math.round(fps)}`;
+    preview(model) {
+      if (model === null) {
+        previewEl.textContent = '';
+        previewEl.classList.remove('active');
+        return;
+      }
+      previewEl.textContent = consequenceText(model);
+      previewEl.classList.add('active');
     },
   };
+}
+
+function consequenceText(model: ActionConsequence): string {
+  const effects: string[] = [];
+  if (model.apGain !== undefined) effects.push(`gain ${model.apGain} AP`);
+  else effects.push(`spend ${model.apCost} AP`);
+  if (model.cutLinks !== undefined) effects.push(`cut ${model.cutLinks} live ${model.cutLinks === 1 ? 'link' : 'links'}`);
+  if (model.restoredLinks !== undefined) effects.push(`restore ${model.restoredLinks} ${model.restoredLinks === 1 ? 'link' : 'links'}`);
+  if (model.pressurePerHour !== undefined && model.pressurePerHour !== 0) {
+    effects.push(`${signed(model.pressurePerHour)} pressure per hour`);
+  }
+  if (model.impactPerHour !== undefined && model.impactPerHour !== 0) {
+    effects.push(`${signed(model.impactPerHour)} Impact per hour`);
+  }
+  if (model.backupCost !== undefined) effects.push(`consume ${model.backupCost} backup credit`);
+  return `${model.label}: ${effects.join(', ')}.`;
+}
+
+function signed(value: number): string {
+  return value > 0 ? `+${value}` : String(value);
 }
 
 function mustFind(id: string): HTMLElement {

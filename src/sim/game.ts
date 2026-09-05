@@ -13,7 +13,8 @@ import type {
   TurnEvent,
   TurnResult,
 } from './types';
-import { blastRadius, createInitialState, infectedCount, stepTurn } from './worm';
+import { getLossReason } from './loss';
+import { createInitialState, infectedCount, stepTurn, toVisibleView } from './worm';
 
 // A fresh copy of the state with its nodes cloned, so actions never mutate the
 // caller's state.
@@ -23,17 +24,22 @@ function cloneState(state: GameState): GameState {
   return { ...state, nodes };
 }
 
-function actionEvent(action: PlayerAction, ok: boolean, reason?: string): TurnEvent {
-  return { kind: 'action', action: action.kind, node: action.node, ok, reason };
+function actionEvent(
+  action: PlayerAction,
+  outcome: 'applied' | 'probe' | 'blocked',
+  apSpent: number,
+  reason?: string,
+): TurnEvent {
+  return { kind: 'action', action: action.kind, node: action.node, outcome, apSpent, reason };
 }
 
 // A blocked action: the original state is returned unchanged, with a reason.
 function reject(state: GameState, action: PlayerAction, reason: string): ActionResult {
-  return { state, ok: false, reason, events: [actionEvent(action, false, reason)] };
+  return { state, ok: false, reason, events: [actionEvent(action, 'blocked', 0, reason)] };
 }
 
-function accept(state: GameState, action: PlayerAction): ActionResult {
-  return { state, ok: true, events: [actionEvent(action, true)] };
+function accept(state: GameState, action: PlayerAction, apSpent: number): ActionResult {
+  return { state, ok: true, events: [actionEvent(action, 'applied', apSpent)] };
 }
 
 function apReason(need: number, have: number): string {
@@ -57,6 +63,9 @@ export function applyPlayerAction(
   config: SimConfig = SIM_CONFIG,
 ): ActionResult {
   if (state.status !== 'playing') return reject(state, action, 'the incident is over');
+  if (state.phase === 'recovery' && action.kind !== 'reconnect' && action.kind !== 'restore') {
+    return reject(state, action, 'only reconnect and restore are available during recovery');
+  }
 
   const next = cloneState(state);
 
@@ -64,7 +73,7 @@ export function applyPlayerAction(
     if (next.emergencyUsed) return reject(state, action, 'emergency budget already spent');
     next.ap += config.emergencyApBonus;
     next.emergencyUsed = true;
-    return accept(next, action);
+    return accept(next, action, 0);
   }
 
   const nodeId = action.node;
@@ -79,10 +88,11 @@ export function applyPlayerAction(
       // built-in EDR, it reveals the node's true state now and any future
       // infection the turn it lands. No neighbour reveal.
       const cost = config.actionCosts.scan;
+      if (node.edr || ns.revealed) return reject(state, action, 'sensor coverage already present');
       if (next.ap < cost) return reject(state, action, apReason(cost, next.ap));
       next.ap -= cost;
       ns.revealed = true;
-      return accept(next, action);
+      return accept(next, action, cost);
     }
     case 'isolate': {
       if (ns.isolated) return reject(state, action, 'already isolated');
@@ -91,7 +101,7 @@ export function applyPlayerAction(
       next.ap -= cost;
       ns.isolated = true;
       ns.isolationAge = 0;
-      return accept(next, action);
+      return accept(next, action, cost);
     }
     case 'reconnect': {
       if (!ns.isolated) return reject(state, action, 'not isolated');
@@ -100,7 +110,7 @@ export function applyPlayerAction(
       next.ap -= cost;
       ns.isolated = false;
       ns.isolationAge = 0;
-      return accept(next, action);
+      return accept(next, action, cost);
     }
     case 'patch': {
       if (ns.state === 'patched') return reject(state, action, 'already patched');
@@ -111,13 +121,13 @@ export function applyPlayerAction(
         next.ap -= cost;
         ns.revealed = true;
         const reason = `cannot patch, ${node.label} is ${ns.state}`;
-        return { state: next, ok: false, reason, events: [actionEvent(action, false, reason)] };
+        return { state: next, ok: true, reason, events: [actionEvent(action, 'probe', cost, reason)] };
       }
       const cost = config.actionCosts.patch;
       if (next.ap < cost) return reject(state, action, apReason(cost, next.ap));
       next.ap -= cost;
       ns.state = 'patched';
-      return accept(next, action);
+      return accept(next, action, cost);
     }
     case 'restore': {
       if (ns.state !== 'infected' && ns.state !== 'encrypted') {
@@ -133,7 +143,7 @@ export function applyPlayerAction(
       next.backupCredits -= 1;
       ns.state = 'clean';
       ns.infectedTurns = 0;
-      return accept(next, action);
+      return accept(next, action, cost);
     }
     default:
       return reject(state, action, 'unknown action');
@@ -153,24 +163,13 @@ function turnPenalty(state: GameState, topology: Topology, config: SimConfig): n
   return Math.round(penalty);
 }
 
-// Sets the win/lose status. Lose takes precedence over win. Lose if the domain
-// controller is encrypted or the blast radius crosses the threshold; win if no
-// infected nodes remain (the worm is contained, even if some nodes were lost).
+// Sets loss status. A successful run ends only when the player files the PIR.
 function applyStatus(state: GameState, topology: Topology, config: SimConfig): void {
-  const dcEncrypted = topology.nodes.some(
-    (n) => n.type === 'domain-controller' && state.nodes[n.id]?.state === 'encrypted',
-  );
-  if (dcEncrypted) {
+  const lossReason = getLossReason(state, topology, config);
+  if (lossReason !== null) {
     state.status = 'lost';
-    state.lossReason = 'domain-controller';
-    return;
+    state.lossReason = lossReason;
   }
-  if (blastRadius(state) >= config.lossBlastRadius) {
-    state.status = 'lost';
-    state.lossReason = 'blast-radius';
-    return;
-  }
-  if (infectedCount(state) === 0) state.status = 'won';
 }
 
 // Business pressure added this turn: each isolated node contributes its
@@ -200,9 +199,49 @@ function longestIsolated(state: GameState, topology: Topology): string | null {
   return victim;
 }
 
-// Ends the turn: a business override may force a reconnect, then the worm
-// spreads, isolation ages, business pressure accrues, AP refreshes, score
-// accrues, and win/lose settles.
+function applyBusinessOverride(
+  state: GameState,
+  topology: Topology,
+  config: SimConfig,
+  events: TurnEvent[],
+): GameState {
+  if (state.pressure < config.pressureMax) return state;
+  const victim = longestIsolated(state, topology);
+  if (!victim) return state;
+
+  const next = cloneState(state);
+  next.nodes[victim].isolated = false;
+  next.nodes[victim].isolationAge = 0;
+  next.findings = [
+    ...next.findings,
+    { turn: state.turn, kind: 'business-override', node: victim },
+  ];
+  events.push({ kind: 'override', node: victim });
+  return next;
+}
+
+function settleAccounting(
+  state: GameState,
+  topology: Topology,
+  config: SimConfig,
+): void {
+  for (const node of topology.nodes) {
+    const ns = state.nodes[node.id];
+    if (ns.isolated) ns.isolationAge = (ns.isolationAge ?? 0) + 1;
+  }
+
+  state.pressure = clamp(
+    state.pressure + pressureLoad(state, topology, config) - config.pressureRecoveryPerTurn,
+    0,
+    config.pressureMax,
+  );
+  state.ap = config.apPerTurn;
+  state.score += turnPenalty(state, topology, config);
+  applyStatus(state, topology, config);
+}
+
+// Ends an active turn with the threat scheduler, or a recovery hour without
+// spread or infection ageing. Both paths retain business accounting.
 export function endTurn(
   state: GameState,
   topology: Topology,
@@ -210,49 +249,63 @@ export function endTurn(
 ): TurnResult {
   if (state.status !== 'playing') return { nextState: state, events: [] };
 
-  const events: TurnEvent[] = [];
+  const events: TurnEvent[] = state.phase === 'recovery' ? [{ kind: 'recovery-hour' }] : [];
+  const working = applyBusinessOverride(state, topology, config, events);
 
-  // 1. Business override at the start of the spread phase: if pressure is
-  //    maxed, the business force-reconnects the oldest containment, ready or
-  //    not. Steady bleed: one node per turn while the meter sits at max.
-  let working = state;
-  if (state.pressure >= config.pressureMax) {
-    const victim = longestIsolated(state, topology);
-    if (victim) {
-      working = cloneState(state);
-      working.nodes[victim].isolated = false;
-      working.nodes[victim].isolationAge = 0;
-      working.findings = [
-        ...working.findings,
-        { turn: state.turn, kind: 'business-override', node: victim },
-      ];
-      events.push({ kind: 'override', node: victim });
-    }
+  if (state.phase === 'recovery') {
+    const next = cloneState(working);
+    next.turn += 1;
+    settleAccounting(next, topology, config);
+    return { nextState: next, events };
   }
 
-  // 2. The worm spreads (across any freshly force-reconnected cable).
+  // The worm spreads across any freshly force-reconnected cable.
   const spread = stepTurn(working, topology, config);
   const next = spread.nextState;
   events.push(...spread.events);
+  settleAccounting(next, topology, config);
+  return { nextState: next, events };
+}
 
-  // 3. Age isolation for every node still isolated.
-  for (const node of topology.nodes) {
-    const ns = next.nodes[node.id];
-    if (ns.isolated) ns.isolationAge = (ns.isolationAge ?? 0) + 1;
+// The declaration gate sees only the visible estate. A hidden foothold is an
+// intentional false declaration risk, not information the player can inspect.
+export function canDeclareContainment(state: GameState, topology: Topology): boolean {
+  if (state.status !== 'playing' || state.phase !== 'active') return false;
+  return Object.values(toVisibleView(state, topology)).every((visible) => visible !== 'infected');
+}
+
+export function declareContainment(
+  state: GameState,
+  topology: Topology,
+  config: SimConfig = SIM_CONFIG,
+): TurnResult {
+  if (!canDeclareContainment(state, topology)) return { nextState: state, events: [] };
+
+  if (infectedCount(state) === 0) {
+    const next = cloneState(state);
+    next.phase = 'recovery';
+    next.ap = config.apPerTurn;
+    return { nextState: next, events: [{ kind: 'containment-declaration', confirmed: true }] };
   }
 
-  // 4. Accumulate business pressure, then let it recover a little each turn.
-  next.pressure = clamp(
-    next.pressure + pressureLoad(next, topology, config) - config.pressureRecoveryPerTurn,
-    0,
-    config.pressureMax,
-  );
+  const declared = cloneState(state);
+  declared.ap = 0;
+  declared.findings = [
+    ...declared.findings,
+    { turn: state.turn, kind: 'premature-declaration' },
+  ];
+  const resolved = endTurn(declared, topology, config);
+  return {
+    nextState: resolved.nextState,
+    events: [{ kind: 'containment-declaration', confirmed: false }, ...resolved.events],
+  };
+}
 
-  // 5. Refresh AP, accrue score, settle win/lose.
-  next.ap = config.apPerTurn;
-  next.score += turnPenalty(next, topology, config);
-  applyStatus(next, topology, config);
-  return { nextState: next, events };
+export function fileReview(state: GameState): TurnResult {
+  if (state.status !== 'playing' || state.phase !== 'recovery') return { nextState: state, events: [] };
+  const next = cloneState(state);
+  next.status = 'won';
+  return { nextState: next, events: [{ kind: 'review-filed' }] };
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -270,6 +323,8 @@ export function replay(
   let state = createInitialState(topology, seed, config);
   for (const move of moves) {
     if (move.kind === 'end-turn') state = endTurn(state, topology, config).nextState;
+    else if (move.kind === 'declare-containment') state = declareContainment(state, topology, config).nextState;
+    else if (move.kind === 'file-review') state = fileReview(state).nextState;
     else state = applyPlayerAction(state, move, topology, config).state;
   }
   return state;

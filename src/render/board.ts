@@ -2,39 +2,96 @@
 // instanced mesh per type (draw calls stay flat), EDR markers as a second
 // instanced mesh, and each cable as its own tube so isolation and compromise
 // can be shown per cable. The board also owns the war-room presentation added
-// in Phase 5: an additive halo glow behind each node (procedural, no
-// postprocessing), the infected pulse, the encryption transition (the node
-// dying and its edges igniting rather than a colour swap), isolation rings that
-// shift amber as business pressure climbs, and the override flash. All of it is
-// driven from the VISIBLE view, so the fog of war survives the lighting: a
-// hidden infection glows exactly like a clean node.
+// in Phase 5: an additive halo glow behind each node, the infected pulse, the
+// encryption transition (the node dying and its edges igniting rather than a
+// colour swap), isolation rings that shift amber as business pressure climbs,
+// and the override flash. All of it is driven from the VISIBLE view, so the fog
+// of war survives the lighting: a hidden infection glows exactly like a clean
+// node.
+//
+// Phase 7 moved the glow off the sprites and into the material. Each node now
+// carries a per-instance emissive value, so a node's own surface is what
+// brightens, which means the bloom pass has something real to work with and an
+// infected chassis lights the floor and the cables around it. The halo sprite
+// survives as the soft atmospheric bloom around that light, not as the light.
 
 import * as THREE from 'three';
 import { palette } from '../config/palette';
 import { VISUAL_CONFIG } from '../config/visual';
-import { effectivePulseScale, motionReduced } from '../data/settings';
+import { motionReduced } from '../data/settings';
 import type { NodeType, Topology, TopologyNode } from '../data/topology';
 import { NODE_TYPES } from '../data/topology';
+import type { PresentationView } from '../sim/telemetry';
 import type { VisibleState } from '../sim/types';
 import {
   buildEdrMarkerGeometry,
   buildNodeGeometries,
+  buildOutlineGeometries,
   nodeTopHeight,
 } from './geometry';
+import {
+  EMISSIVE_ATTRIBUTE,
+  HEALTHY_CABLE_EMISSIVE,
+  createCableMaterial,
+  createChassisMaterial,
+  type CableMaterial,
+} from './materials';
+import { haloTexture } from './textures';
+import { StateMarkerLayer } from './state-markers';
+import { CompanyLayer } from './company';
+import type { ActionKind } from '../sim/types';
 
-const COLOUR_BASE = new THREE.Color(palette.nodeBase);
+export const BOARD_SIGNAL_COLOURS = {
+  clean: palette.nodeBase,
+  unknown: '#62676d',
+} as const;
+
+const COLOUR_BASE = new THREE.Color(BOARD_SIGNAL_COLOURS.clean);
+const COLOUR_UNKNOWN = new THREE.Color(BOARD_SIGNAL_COLOURS.unknown);
 const COLOUR_HIGHLIGHT = new THREE.Color(palette.nodeHover);
 const COLOUR_SELECTED = new THREE.Color(palette.nodeSelected);
 const COLOUR_INFECTION = new THREE.Color(palette.infection); // magenta, the threat
 const COLOUR_ENCRYPTED = new THREE.Color('#180a14'); // gone dark, magenta-tinted
-const COLOUR_PATCHED = new THREE.Color('#8ff0d4'); // immune, a brighter defended cyan
+const COLOUR_PATCHED = new THREE.Color('#315d59'); // defended, but quieter than selection
 const COLOUR_GLOW = new THREE.Color(palette.accent); // cyan infrastructure glow
 const COLOUR_AMBER = new THREE.Color('#f5a524'); // business-pressure warning
 
 export const CABLE_HEIGHT = 0.12; // cables run just above the floor, clear of silhouettes
-const CABLE_RADIUS = 0.045;
+const CABLE_RADIUS = 0.05;
 const MARKER_GAP = 0.4; // how far an EDR ring floats above a node's top
 const ENCRYPT_TRANSITION = 0.5; // seconds for a node to die and its edges to ignite
+
+// How hard each visible state makes a node's own surface glow. This is the
+// per-instance emissive attribute, so these are the values that decide what
+// blooms and what stays quiet infrastructure.
+//
+// The spread between them matters more than any single value. Clean sits low
+// enough that a healthy node reads as lit metal rather than a lamp, which is
+// what leaves the magenta room to be alarming: if everything glows, nothing
+// does, and the threat colour stops meaning anything.
+export const BOARD_SIGNAL_LEVELS = {
+  healthyCable: HEALTHY_CABLE_EMISSIVE,
+  edr: 0.1,
+  selection: 0.3,
+  compromise: 0.85,
+} as const;
+
+const GLOW_CLEAN = 0.035;
+const GLOW_HOVER = 0.16;
+const GLOW_SELECTED = BOARD_SIGNAL_LEVELS.selection;
+const GLOW_INFECTED = BOARD_SIGNAL_LEVELS.compromise;
+const GLOW_ENCRYPTED = 0.02;
+const GLOW_PATCHED = 0.025;
+
+// Texture tiling per type, so a tall rack does not wear the same stretched
+// panel as a flat puck. Roughly one panel repeat per world unit of surface.
+const CHASSIS_REPEAT: Record<NodeType, [number, number]> = {
+  workstation: [1, 1],
+  server: [1, 3],
+  router: [3, 1],
+  backup: [3, 2],
+  'domain-controller': [2, 2],
+};
 
 interface InstanceLocation {
   type: NodeType;
@@ -47,14 +104,13 @@ export interface Board {
   resolveHit(object: THREE.Object3D, instanceId: number | undefined): string | null;
   setHighlight(nodeId: string | null): void;
   setSelected(nodeId: string | null): void;
+  setActionPreview(nodeId: string | null, action: ActionKind | null): void;
+  restartEquipment(nodeId: string): void;
+  dispose(): void;
   /** Set one node's visible state. animate=true runs the encryption transition. */
   setVisibleState(nodeId: string, state: VisibleState, animate?: boolean): void;
-  /** Apply a whole visible view at once (normal play) or true view (debug). */
-  applyView(view: Record<string, VisibleState>): void;
-  /** Cut or restore a node's cables to show isolation. */
-  setIsolated(nodeId: string, isolated: boolean): void;
-  /** Show or hide the EDR ring a deployed sensor adds to a node. */
-  setSensor(nodeId: string, on: boolean): void;
+  /** Apply the complete fog-safe public board projection. */
+  applyPresentation(view: PresentationView): void;
   /** Global business pressure (0..1): isolation rings warm towards amber. */
   setPressure(fraction: number): void;
   /** A business override just force-reconnected this node: flash it. */
@@ -65,6 +121,7 @@ export interface Board {
 
 interface CableRecord {
   mesh: THREE.Mesh;
+  material: CableMaterial;
   a: string;
   b: string;
 }
@@ -74,32 +131,17 @@ interface EncTransition {
   edge: THREE.LineSegments;
 }
 
-// A soft radial-gradient sprite texture for the additive node glow. Built once
-// in a canvas (procedural, CC0 by construction, no asset file).
-function makeHaloTexture(): THREE.Texture {
-  const size = 128;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  if (ctx) {
-    const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-    g.addColorStop(0, 'rgba(255,255,255,1)');
-    g.addColorStop(0.4, 'rgba(255,255,255,0.5)');
-    g.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, size, size);
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.needsUpdate = true;
-  return texture;
-}
-
-export function createBoard(topology: Topology): Board {
+export function createBoard(topology: Topology, environment: THREE.Texture | null = null): Board {
   const group = new THREE.Group();
   const geometries = buildNodeGeometries();
   const glow = VISUAL_CONFIG.glowIntensity;
+  const markerLayer = new StateMarkerLayer(topology, { reducedMotion: motionReduced() });
+  group.add(markerLayer.group);
+  const company = new CompanyLayer(topology);
+  group.add(company.group);
 
   const meshByType = new Map<NodeType, THREE.InstancedMesh>();
+  const glowByType = new Map<NodeType, THREE.InstancedBufferAttribute>();
   const instanceOrder = new Map<NodeType, string[]>();
   const locationById = new Map<string, InstanceLocation>();
   const baseMatrix = new Map<string, THREE.Matrix4>();
@@ -109,12 +151,21 @@ export function createBoard(topology: Topology): Board {
     const nodesOfType = topology.nodes.filter((n) => n.type === type);
     if (nodesOfType.length === 0) continue;
 
-    const material = new THREE.MeshStandardMaterial({
-      color: '#ffffff', // white base so the per-instance colour shows unmodified
-      roughness: 0.5,
-      metalness: 0.1,
+    const material = createChassisMaterial(environment, {
+      repeat: CHASSIS_REPEAT[type],
+      emissive: glow,
     });
-    const mesh = new THREE.InstancedMesh(geometries[type], material, nodesOfType.length);
+    const geometry = geometries[type];
+    // The per-instance glow attribute lives on the geometry, alongside the
+    // instance matrix and colour three manages itself.
+    const glowAttribute = new THREE.InstancedBufferAttribute(
+      new Float32Array(nodesOfType.length).fill(GLOW_CLEAN),
+      1,
+    );
+    glowAttribute.setUsage(THREE.DynamicDrawUsage);
+    geometry.setAttribute(EMISSIVE_ATTRIBUTE, glowAttribute);
+
+    const mesh = new THREE.InstancedMesh(geometry, material, nodesOfType.length);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.userData.nodeType = type;
@@ -133,31 +184,34 @@ export function createBoard(topology: Topology): Board {
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
 
     meshByType.set(type, mesh);
+    glowByType.set(type, glowAttribute);
     instanceOrder.set(type, order);
     group.add(mesh);
   }
 
   group.add(buildEdrMarkers(topology));
-  const { group: cableGroup, cablesByNode } = buildCables(topology);
+  const { group: cableGroup, cablesByNode } = buildCables(topology, environment);
   group.add(cableGroup);
 
   // Additive glow halos: one billboarded sprite per node, tinted by visible
-  // state. Additive blending means they read as light against the near-black
-  // and shine through the fog. Driven by the visible view like the fill colour,
-  // so a hidden infection glows cyan like any clean node.
-  const haloTexture = makeHaloTexture();
+  // state. Since Phase 7 the node's own surface carries the light, so these are
+  // the soft atmospheric spill around it rather than the glow itself, and they
+  // sit lower than they used to. Driven by the visible view like the fill
+  // colour, so a hidden infection glows cyan like any clean node.
+  const halo = haloTexture();
   const halos = new Map<string, THREE.Sprite>();
   for (const node of topology.nodes) {
     const mat = new THREE.SpriteMaterial({
-      map: haloTexture,
+      map: halo,
       color: COLOUR_GLOW,
       transparent: true,
       opacity: 0,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
+      fog: false,
     });
     const sprite = new THREE.Sprite(mat);
-    const size = (1.7 + nodeTopHeight(node.type) * 0.6) * glow;
+    const size = (1.9 + nodeTopHeight(node.type) * 0.6) * glow;
     sprite.scale.set(size, size, 1);
     sprite.position.set(node.x, nodeTopHeight(node.type) * 0.5 + 0.3, node.z);
     halos.set(node.id, sprite);
@@ -165,8 +219,10 @@ export function createBoard(topology: Topology): Board {
   }
 
   // Wireframe outlines for state changes: magenta for encrypted (compromised),
-  // cyan for patched (defended), built once per type and reused.
-  const edgesByType = buildEdgeGeometries(geometries);
+  // cyan for patched (defended). Built from the plain silhouettes rather than
+  // the detailed chassis, so the outline is the shape you read from across the
+  // room instead of every vent slot and bevel seam.
+  const edgesByType = buildEdgeGeometries();
   const patchedMaterial = new THREE.LineBasicMaterial({ color: COLOUR_PATCHED });
   const stateEdges = new Map<string, THREE.LineSegments>();
   const isolatedSet = new Set<string>();
@@ -174,7 +230,7 @@ export function createBoard(topology: Topology): Board {
   // Isolation rings: a flat ring at a node's base while it is cut off, warming
   // from cyan to amber as global business pressure climbs (the escalation the
   // board shows, not just the meter).
-  const isolationRingGeometry = new THREE.TorusGeometry(1.15, 0.06, 8, 24);
+  const isolationRingGeometry = new THREE.TorusGeometry(1.15, 0.06, 10, 28);
   isolationRingGeometry.rotateX(Math.PI / 2);
   const isolationRings = new Map<string, THREE.Mesh>();
   let pressureFraction = 0;
@@ -185,18 +241,22 @@ export function createBoard(topology: Topology): Board {
   const sensorMaterial = new THREE.MeshStandardMaterial({
     color: palette.accent,
     emissive: palette.accent,
-    emissiveIntensity: 0.4,
-    roughness: 0.4,
+    emissiveIntensity: BOARD_SIGNAL_LEVELS.edr,
+    roughness: 0.35,
+    metalness: 0.6,
+    envMap: environment,
   });
   const sensorRings = new Map<string, THREE.Mesh>();
 
   // Node state: infection (visible) plus transient hover/selection and the
   // in-flight encryption transitions and override flashes.
   const visibleById = new Map<string, VisibleState>();
+  const observedById = new Map<string, boolean>();
   const encTransitions = new Map<string, EncTransition>();
   const overrideFlashes = new Map<string, number>(); // nodeId -> start elapsed
   let highlightedId: string | null = null;
   let selectedId: string | null = null;
+  let latestPresentation: PresentationView = { nodes: {} };
 
   // Fill colour: infection outranks selection and hover so the threat colour is
   // never lost to a cursor. Patched sits with the state colours.
@@ -207,7 +267,29 @@ export function createBoard(topology: Topology): Board {
     if (visible === 'patched') return COLOUR_PATCHED;
     if (nodeId === selectedId) return COLOUR_SELECTED;
     if (nodeId === highlightedId) return COLOUR_HIGHLIGHT;
+    if (observedById.get(nodeId) === false) return COLOUR_UNKNOWN;
     return COLOUR_BASE;
+  }
+
+  // How hard this node's own surface should glow, in the same precedence order.
+  function glowFor(nodeId: string): number {
+    const visible = visibleById.get(nodeId) ?? 'clean';
+    if (visible === 'encrypted') return GLOW_ENCRYPTED;
+    if (visible === 'infected') return GLOW_INFECTED;
+    if (visible === 'patched') return GLOW_PATCHED;
+    if (nodeId === selectedId) return GLOW_SELECTED;
+    if (nodeId === highlightedId) return GLOW_HOVER;
+    if (observedById.get(nodeId) === false) return 0.012;
+    return GLOW_CLEAN;
+  }
+
+  function setInstanceGlow(nodeId: string, value: number): void {
+    const location = locationById.get(nodeId);
+    if (!location) return;
+    const attribute = glowByType.get(location.type);
+    if (!attribute) return;
+    attribute.setX(location.index, value);
+    attribute.needsUpdate = true;
   }
 
   // Halo colour and resting opacity by visible state. Clean/covered nodes glow
@@ -215,21 +297,22 @@ export function createBoard(topology: Topology): Board {
   // brighter cyan. Selection and hover lift a clean node's glow.
   function haloTarget(nodeId: string): { colour: THREE.Color; opacity: number } {
     const visible = visibleById.get(nodeId) ?? 'clean';
-    if (visible === 'encrypted') return { colour: COLOUR_INFECTION, opacity: 0.18 * glow };
-    if (visible === 'infected') return { colour: COLOUR_INFECTION, opacity: 0.55 * glow };
-    if (visible === 'patched') return { colour: COLOUR_PATCHED, opacity: 0.45 * glow };
-    if (nodeId === selectedId) return { colour: COLOUR_SELECTED, opacity: 0.55 * glow };
-    if (nodeId === highlightedId) return { colour: COLOUR_GLOW, opacity: 0.5 * glow };
-    return { colour: COLOUR_GLOW, opacity: 0.26 * glow };
+    if (visible === 'encrypted') return { colour: COLOUR_INFECTION, opacity: 0.1 * glow };
+    if (visible === 'infected') return { colour: COLOUR_INFECTION, opacity: 0.34 * glow };
+    if (visible === 'patched') return { colour: COLOUR_PATCHED, opacity: 0.18 * glow };
+    if (nodeId === selectedId) return { colour: COLOUR_SELECTED, opacity: 0.26 * glow };
+    if (nodeId === highlightedId) return { colour: COLOUR_GLOW, opacity: 0.22 * glow };
+    if (observedById.get(nodeId) === false) return { colour: COLOUR_UNKNOWN, opacity: 0.025 * glow };
+    return { colour: COLOUR_GLOW, opacity: 0.06 * glow };
   }
 
   function applyHalo(nodeId: string): void {
-    const halo = halos.get(nodeId);
-    if (!halo) return;
+    const sprite = halos.get(nodeId);
+    if (!sprite) return;
     if (encTransitions.has(nodeId) || overrideFlashes.has(nodeId)) return; // animated in tick
     const target = haloTarget(nodeId);
-    (halo.material as THREE.SpriteMaterial).color.copy(target.colour);
-    (halo.material as THREE.SpriteMaterial).opacity = target.opacity;
+    (sprite.material as THREE.SpriteMaterial).color.copy(target.colour);
+    (sprite.material as THREE.SpriteMaterial).opacity = target.opacity;
   }
 
   function repaint(nodeId: string | null): void {
@@ -240,6 +323,7 @@ export function createBoard(topology: Topology): Board {
     if (!mesh) return;
     mesh.setColorAt(location.index, colourFor(nodeId));
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    setInstanceGlow(nodeId, glowFor(nodeId));
     applyHalo(nodeId);
   }
 
@@ -269,13 +353,12 @@ export function createBoard(topology: Topology): Board {
 
   // Cyan cable turns magenta once both its endpoints read compromised, so the
   // threat is visible spreading along the wiring, not just sitting on nodes.
+  // The travelling pulse turns with it and speeds up: routine traffic becomes
+  // the worm moving.
   function refreshCableLook(record: CableRecord): void {
     const bothCompromised =
       isCompromised(visibleById.get(record.a)) && isCompromised(visibleById.get(record.b));
-    const mat = record.mesh.material as THREE.MeshStandardMaterial;
-    mat.color.set(bothCompromised ? palette.infection : palette.accent);
-    mat.emissive.set(bothCompromised ? palette.infection : palette.accent);
-    mat.emissiveIntensity = bothCompromised ? 0.5 * glow : 0.12 * glow;
+    record.material.setCompromised(bothCompromised);
   }
 
   function refreshCableVisibility(record: CableRecord): void {
@@ -331,6 +414,7 @@ export function createBoard(topology: Topology): Board {
     stateEdges.set(nodeId, outline);
     group.add(outline);
     setInstanceColour(nodeId, COLOUR_ENCRYPTED);
+    setInstanceGlow(nodeId, GLOW_ENCRYPTED);
     applyHalo(nodeId);
   }
 
@@ -353,21 +437,19 @@ export function createBoard(topology: Topology): Board {
     for (const record of cablesByNode.get(nodeId) ?? []) refreshCableLook(record);
   }
 
-  // Motion is a required state cue, so the pulse survives every level, just
-  // gentler as it drops. The encryption punch is optional juice, off when the
-  // player asked for reduced motion.
-  const pulseAmp = VISUAL_CONFIG.pulseAmplitude * effectivePulseScale();
-  const impact = motionReduced() ? 0 : VISUAL_CONFIG.encryptImpactScale;
-
   function tick(elapsed: number): void {
-    // Infected pulse: the halos of visibly infected nodes breathe. Motion is a
-    // required state cue, so it survives reduced motion, just gentler.
-    const pulse = 1 + pulseAmp * 0.5 * (1 + Math.sin(elapsed * VISUAL_CONFIG.pulseSpeed * Math.PI));
+    // The physical threat plate now carries infection in a still frame.
+    // Reduced motion can therefore hold both the plate and surface steady.
+    const reduced = motionReduced();
+    company.tick(elapsed, reduced);
+    markerLayer.setReducedMotion(reduced);
+    const pulse = markerLayer.tick(elapsed * VISUAL_CONFIG.pulseSpeed);
     for (const [nodeId, state] of visibleById) {
       if (state !== 'infected' || encTransitions.has(nodeId)) continue;
-      const halo = halos.get(nodeId);
-      if (!halo) continue;
-      (halo.material as THREE.SpriteMaterial).opacity = 0.55 * glow * pulse;
+      setInstanceGlow(nodeId, GLOW_INFECTED * pulse);
+      const sprite = halos.get(nodeId);
+      if (!sprite) continue;
+      (sprite.material as THREE.SpriteMaterial).opacity = 0.45 * glow * pulse;
     }
 
     // Encryption transitions: the node darkens, its outline ignites, its glow
@@ -375,23 +457,26 @@ export function createBoard(topology: Topology): Board {
     for (const [nodeId, trans] of [...encTransitions]) {
       if (trans.start === Number.NEGATIVE_INFINITY) trans.start = elapsed;
       const p = Math.min(1, (elapsed - trans.start) / ENCRYPT_TRANSITION);
-      const halo = halos.get(nodeId);
+      const sprite = halos.get(nodeId);
       // Fill colour lerps from the last magenta towards the dead dark.
       const colour = COLOUR_INFECTION.clone().lerp(COLOUR_ENCRYPTED, p * p);
       setInstanceColour(nodeId, colour);
+      // The surface flares white-hot then goes out, the shape of a thing dying.
+      const flare = Math.sin(Math.min(1, p * 1.4) * Math.PI); // 0->1->0
+      setInstanceGlow(nodeId, GLOW_ENCRYPTED + (GLOW_INFECTED * 2.4) * flare);
       // Outline ignites in fast.
       (trans.edge.material as THREE.LineBasicMaterial).opacity = Math.min(1, p * 1.6);
-      // Glow flares (a spike near the start) then settles to a dim dying ember.
-      if (halo) {
-        const flare = Math.sin(Math.min(1, p * 1.4) * Math.PI); // 0->1->0
-        const settle = 0.18 * glow;
-        (halo.material as THREE.SpriteMaterial).color.copy(COLOUR_INFECTION);
-        (halo.material as THREE.SpriteMaterial).opacity = settle + 0.7 * glow * flare;
+      if (sprite) {
+        const settle = 0.14 * glow;
+        (sprite.material as THREE.SpriteMaterial).color.copy(COLOUR_INFECTION);
+        (sprite.material as THREE.SpriteMaterial).opacity = settle + 0.7 * glow * flare;
       }
       // Scale punch: a quick dip and recover.
+      const impact = reduced ? 0 : VISUAL_CONFIG.encryptImpactScale;
       setInstanceScale(nodeId, 1 - impact * Math.sin(p * Math.PI));
       if (p >= 1) {
         setInstanceColour(nodeId, COLOUR_ENCRYPTED);
+        setInstanceGlow(nodeId, GLOW_ENCRYPTED);
         setInstanceScale(nodeId, 1);
         (trans.edge.material as THREE.LineBasicMaterial).opacity = 1;
         encTransitions.delete(nodeId);
@@ -402,13 +487,15 @@ export function createBoard(topology: Topology): Board {
     // Override flashes: a bright cyan burst on a force-reconnected node.
     for (const [nodeId, start] of [...overrideFlashes]) {
       const p = Math.min(1, (elapsed - start) / 0.6);
-      const halo = halos.get(nodeId);
-      if (halo) {
-        (halo.material as THREE.SpriteMaterial).color.copy(COLOUR_SELECTED);
-        (halo.material as THREE.SpriteMaterial).opacity = (1 - p) * 0.9 * glow;
+      const sprite = halos.get(nodeId);
+      setInstanceGlow(nodeId, glowFor(nodeId) + (1 - p) * 1.4);
+      if (sprite) {
+        (sprite.material as THREE.SpriteMaterial).color.copy(COLOUR_SELECTED);
+        (sprite.material as THREE.SpriteMaterial).opacity = (1 - p) * 0.8 * glow;
       }
       if (p >= 1) {
         overrideFlashes.delete(nodeId);
+        setInstanceGlow(nodeId, glowFor(nodeId));
         applyHalo(nodeId);
       }
     }
@@ -416,9 +503,11 @@ export function createBoard(topology: Topology): Board {
 
   return {
     group,
-    nodeMeshes: [...meshByType.values()],
+    nodeMeshes: [...meshByType.values(), ...company.pickMeshes],
     resolveHit(object, instanceId) {
       if (instanceId === undefined) return null;
+      const assetIds = object.userData.assetIds as string[] | undefined;
+      if (assetIds) return assetIds[instanceId] ?? null;
       const type = object.userData.nodeType as NodeType | undefined;
       if (!type) return null;
       return instanceOrder.get(type)?.[instanceId] ?? null;
@@ -436,31 +525,26 @@ export function createBoard(topology: Topology): Board {
       selectedId = nodeId;
       repaint(previous);
       repaint(selectedId);
+      markerLayer.apply(latestPresentation, selectedId);
+      company.preview(selectedId, null);
     },
+    setActionPreview(nodeId, action) { company.preview(nodeId, action); },
+    restartEquipment(nodeId) { company.restart(nodeId, performance.now() / 1000, motionReduced()); },
+    dispose() { company.dispose(); },
     setVisibleState,
-    applyView(view) {
-      for (const [nodeId, state] of Object.entries(view)) setVisibleState(nodeId, state, false);
-    },
-    setIsolated(nodeId, isolated) {
-      if (isolated) isolatedSet.add(nodeId);
-      else isolatedSet.delete(nodeId);
-      for (const record of cablesByNode.get(nodeId) ?? []) refreshCableVisibility(record);
-      updateIsolationRing(nodeId);
-    },
-    setSensor(nodeId, on) {
-      const has = sensorRings.has(nodeId);
-      if (on && !has) {
-        const node = topology.byId.get(nodeId);
-        if (!node) return;
-        const ring = new THREE.Mesh(sensorGeometry, sensorMaterial);
-        ring.position.set(node.x, nodeTopHeight(node.type) + MARKER_GAP, node.z);
-        sensorRings.set(nodeId, ring);
-        group.add(ring);
-      } else if (!on && has) {
-        const ring = sensorRings.get(nodeId);
-        if (ring) group.remove(ring);
-        sensorRings.delete(nodeId);
+    applyPresentation(view) {
+      latestPresentation = view;
+      for (const node of topology.nodes) {
+        const presentation = view.nodes[node.id];
+        if (!presentation) continue;
+        observedById.set(node.id, presentation.observed);
+        setVisibleState(node.id, presentation.visibleState, false);
+        repaint(node.id);
+        setNodeIsolated(node.id, presentation.isolated);
+        setNodeSensor(node.id, presentation.edr && !node.edr);
       }
+      markerLayer.apply(view, selectedId);
+      company.apply(view);
     },
     setPressure(fraction) {
       pressureFraction = THREE.MathUtils.clamp(fraction, 0, 1);
@@ -473,6 +557,29 @@ export function createBoard(topology: Topology): Board {
     tick,
   };
 
+  function setNodeIsolated(nodeId: string, isolated: boolean): void {
+    if (isolated) isolatedSet.add(nodeId);
+    else isolatedSet.delete(nodeId);
+    for (const record of cablesByNode.get(nodeId) ?? []) refreshCableVisibility(record);
+    updateIsolationRing(nodeId);
+  }
+
+  function setNodeSensor(nodeId: string, on: boolean): void {
+    const has = sensorRings.has(nodeId);
+    if (on && !has) {
+      const node = topology.byId.get(nodeId);
+      if (!node) return;
+      const ring = new THREE.Mesh(sensorGeometry, sensorMaterial);
+      ring.position.set(node.x, nodeTopHeight(node.type) + MARKER_GAP, node.z);
+      sensorRings.set(nodeId, ring);
+      group.add(ring);
+    } else if (!on && has) {
+      const ring = sensorRings.get(nodeId);
+      if (ring) group.remove(ring);
+      sensorRings.delete(nodeId);
+    }
+  }
+
   function tintIsolationRing(nodeId: string): void {
     const ring = isolationRings.get(nodeId);
     if (!ring) return;
@@ -480,7 +587,7 @@ export function createBoard(topology: Topology): Board {
     const colour = COLOUR_GLOW.clone().lerp(COLOUR_AMBER, pressureFraction);
     mat.color.copy(colour);
     mat.emissive.copy(colour);
-    mat.emissiveIntensity = (0.3 + 0.5 * pressureFraction) * glow;
+    mat.emissiveIntensity = (0.35 + 0.9 * pressureFraction) * glow;
   }
 
   function updateIsolationRing(nodeId: string): void {
@@ -492,8 +599,10 @@ export function createBoard(topology: Topology): Board {
       const material = new THREE.MeshStandardMaterial({
         color: palette.accent,
         emissive: palette.accent,
-        emissiveIntensity: 0.3 * glow,
-        roughness: 0.5,
+        emissiveIntensity: 0.35 * glow,
+        roughness: 0.4,
+        metalness: 0.5,
+        envMap: environment,
       });
       const ring = new THREE.Mesh(isolationRingGeometry, material);
       ring.position.set(node.x, 0.06, node.z);
@@ -515,12 +624,15 @@ function isCompromised(state: VisibleState | undefined): boolean {
   return state === 'infected' || state === 'encrypted';
 }
 
-// One edge geometry per node type, for the state outlines.
-function buildEdgeGeometries(
-  geometries: Record<NodeType, THREE.BufferGeometry>,
-): Record<NodeType, THREE.EdgesGeometry> {
+// One edge geometry per node type, for the state outlines. Built from the plain
+// silhouettes rather than the detailed chassis so the outline stays readable.
+function buildEdgeGeometries(): Record<NodeType, THREE.EdgesGeometry> {
+  const outlines = buildOutlineGeometries();
   const edges = {} as Record<NodeType, THREE.EdgesGeometry>;
-  for (const type of NODE_TYPES) edges[type] = new THREE.EdgesGeometry(geometries[type]);
+  for (const type of NODE_TYPES) {
+    edges[type] = new THREE.EdgesGeometry(outlines[type]);
+    outlines[type].dispose(); // only ever needed to derive the edges
+  }
   return edges;
 }
 
@@ -530,8 +642,9 @@ function buildEdrMarkers(topology: Topology): THREE.InstancedMesh {
   const material = new THREE.MeshStandardMaterial({
     color: palette.accent,
     emissive: palette.accent,
-    emissiveIntensity: 0.4,
-    roughness: 0.4,
+    emissiveIntensity: BOARD_SIGNAL_LEVELS.edr,
+    roughness: 0.35,
+    metalness: 0.6,
   });
   const mesh = new THREE.InstancedMesh(buildEdrMarkerGeometry(), material, covered.length);
   const transform = new THREE.Matrix4();
@@ -544,10 +657,14 @@ function buildEdrMarkers(topology: Topology): THREE.InstancedMesh {
   return mesh;
 }
 
-// Cables as one thin tube each, near the floor, indexed by the nodes they
+// Cables as one sheathed tube each, near the floor, indexed by the nodes they
 // touch so isolation can hide a node's cables and compromise can recolour them.
-// Each gets its own material so a single cable can turn magenta independently.
-function buildCables(topology: Topology): {
+// Each gets its own material so a single cable can turn magenta independently,
+// and so its travelling pulse can run at its own length and speed.
+function buildCables(
+  topology: Topology,
+  environment: THREE.Texture | null,
+): {
   group: THREE.Group;
   cablesByNode: Map<string, CableRecord[]>;
 } {
@@ -565,17 +682,12 @@ function buildCables(topology: Topology): {
     const a = topology.byId.get(cable.a);
     const b = topology.byId.get(cable.b);
     if (!a || !b) continue;
-    const material = new THREE.MeshStandardMaterial({
-      color: palette.accent,
-      emissive: palette.accent,
-      emissiveIntensity: 0.12 * VISUAL_CONFIG.glowIntensity,
-      roughness: 0.6,
-      transparent: true,
-      opacity: 0.6,
-    });
-    const mesh = new THREE.Mesh(tubeBetween(a, b, up), material);
+    const length = Math.hypot(b.x - a.x, b.z - a.z);
+    const material = createCableMaterial(environment, length);
+    const mesh = new THREE.Mesh(tubeBetween(a, b, up), material.material);
+    mesh.castShadow = true;
     mesh.receiveShadow = true;
-    const record: CableRecord = { mesh, a: cable.a, b: cable.b };
+    const record: CableRecord = { mesh, material, a: cable.a, b: cable.b };
     index(cable.a, record);
     index(cable.b, record);
     group.add(mesh);
@@ -590,7 +702,9 @@ function tubeBetween(a: TopologyNode, b: TopologyNode, up: THREE.Vector3): THREE
   const direction = new THREE.Vector3().subVectors(end, start);
   const length = direction.length();
 
-  const geometry = new THREE.CylinderGeometry(CABLE_RADIUS, CABLE_RADIUS, length, 6);
+  // Eight sides rather than six: the extra facets are what let the sheathing
+  // normal map read as a round braided cable instead of a faceted stick.
+  const geometry = new THREE.CylinderGeometry(CABLE_RADIUS, CABLE_RADIUS, length, 8, 1);
   const quaternion = new THREE.Quaternion().setFromUnitVectors(up, direction.normalize());
   geometry.applyQuaternion(quaternion);
   const midpoint = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);

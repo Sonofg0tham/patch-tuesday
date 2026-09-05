@@ -15,6 +15,7 @@
     "bots": "vite-node scripts/bot-stats.ts",
     "dwell": "vite-node scripts/dwell-sweep.ts",
     "gen": "vite-node scripts/gen-sweep.ts",
+    "pacing": "vite-node scripts/pacing-sweep.ts",
     "pir": "vite-node scripts/pir-demo.ts"
   },
   "dependencies": {
