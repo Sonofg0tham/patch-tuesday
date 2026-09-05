@@ -21,6 +21,8 @@ export interface RawNode {
   label: string;
   type: NodeType;
   role: string;
+  /** Stable public estate zone used by restrained floor stencils. */
+  segment: string;
   col: number;
   row: number;
   edr: boolean;
@@ -76,6 +78,9 @@ export function assembleTopology(
       throw new Error(`node ${raw.id} has unknown type "${raw.type}"`);
     }
     if (byId.has(raw.id)) throw new Error(`duplicate node id "${raw.id}"`);
+    if (typeof raw.segment !== 'string' || raw.segment.trim().length === 0) {
+      throw new Error(`node ${raw.id} has no segment`);
+    }
     const cell = `${raw.col},${raw.row}`;
     if (seenCell.has(cell)) {
       throw new Error(`two nodes share grid cell ${cell} (${raw.id})`);

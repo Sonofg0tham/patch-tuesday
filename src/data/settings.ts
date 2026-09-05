@@ -29,9 +29,8 @@ export interface Settings {
   renderQuality: RenderQuality;
   /**
    * Threat forecast assist: ring the nodes the worm could reach next turn.
-   * Off by default. It surfaces nothing the player cannot already see, but it
-   * removes a real perception chore, so whether it belongs on is Craig's call
-   * and the player's, not a default.
+   * On by default. It surfaces nothing the player cannot already see and keeps
+   * route tracing from becoming a perception test. Existing choices persist.
    */
   threatForecast: boolean;
   /** HUD/menu text scale multiplier, 0.8..1.5. Live. */
@@ -53,7 +52,7 @@ const DEFAULTS: Settings = {
   musicVolume: 0.6, // the score sits under the effects, never over them
   sfxVolume: 1,
   renderQuality: 'auto',
-  threatForecast: false,
+  threatForecast: true,
   textScale: 1,
   highContrast: false,
   shakeIntensity: VISUAL_CONFIG.shakeIntensity, // 0, the calm default

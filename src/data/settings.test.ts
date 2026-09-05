@@ -22,6 +22,7 @@ describe('settings', () => {
     expect(s.highContrast).toBe(false);
     expect(s.shakeIntensity).toBe(0);
     expect(s.motionLevel).toBe('calm');
+    expect(s.threatForecast).toBe(true);
     expect(masterVolume()).toBe(0.7);
   });
 
@@ -69,6 +70,18 @@ describe('reduced-motion default for a fresh visitor', () => {
     const fresh = await import('./settings');
     expect(fresh.loadSettings().motionLevel).toBe('reduced');
   });
+
+  it('preserves an existing stored threat forecast preference', async () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => JSON.stringify({ threatForecast: false }),
+      setItem: () => undefined,
+    });
+    vi.resetModules();
+
+    const fresh = await import('./settings');
+
+    expect(fresh.loadSettings().threatForecast).toBe(false);
+  });
 });
 
 function base(): Settings {
@@ -77,7 +90,7 @@ function base(): Settings {
     musicVolume: 0.6,
     sfxVolume: 1,
     renderQuality: 'auto',
-    threatForecast: false,
+    threatForecast: true,
     textScale: 1,
     highContrast: false,
     shakeIntensity: 0,

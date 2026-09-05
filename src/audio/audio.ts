@@ -19,6 +19,10 @@ import { createMusic, type Music, type Outcome } from './music';
 import { createReverbBus, type ReverbBus } from './reverb';
 
 export type SoundName =
+  | 'disconnect'
+  | 'reconnect'
+  | 'sensor'
+  | 'restart'
   | 'confirm' // a clean action landed
   | 'denied' // an illegal action, alongside the plain-English reason
   | 'spread' // one worm spread attempt during resolution (a tense tick)
@@ -26,9 +30,12 @@ export type SoundName =
   | 'encrypt-heavy' // the DC or Backup Node encrypts: heavier
   | 'defeat' // the run is lost: a flat dead-line tone
   | 'contain' // the worm is contained: quietly triumphant but exhausted
-  | 'override'; // business pressure force-reconnected a node: phone slammed down
+  | 'override' // business pressure force-reconnected a node: phone slammed down
+  | 'handover' // short pager cue when the player accepts incident command
+  | 'analysis'; // forensic sweep begins, centred and deliberately restrained
 
 export const SOUND_NAMES: SoundName[] = [
+  'disconnect', 'reconnect', 'sensor', 'restart',
   'confirm',
   'denied',
   'spread',
@@ -37,6 +44,8 @@ export const SOUND_NAMES: SoundName[] = [
   'defeat',
   'contain',
   'override',
+  'handover',
+  'analysis',
 ];
 
 /** Optional placement for a sound: -1 hard left, 0 centre, 1 hard right. */
@@ -58,6 +67,8 @@ export interface Audio {
   setBlastIntensity(fraction: number): void;
   /** Business pressure 0..1: an escalating low undertone. */
   setPressure(fraction: number): void;
+  /** Public recovery phase, so the score can release tension without ending. */
+  setRecovery(value: boolean): void;
   /** The run ended: the score plays its verdict and stops adapting. */
   resolve(outcome: Outcome): void;
   /** File-swap escape hatch: play this buffer for the name instead of the synth. */
@@ -72,6 +83,8 @@ const DUCK: Partial<Record<SoundName, [depth: number, seconds: number]>> = {
   override: [0.5, 0.3],
   defeat: [0.85, 1.6],
   contain: [0.5, 1.0],
+  handover: [0.25, 0.35],
+  analysis: [0.18, 0.2],
 };
 
 export function createAudio(): Audio {
@@ -91,6 +104,7 @@ export function createAudio(): Audio {
   // because a board that is contained but screaming at you is still tense.
   let blastLevel = 0;
   let pressureLevel = 0;
+  let recovering = false;
   function pushIntensity(): void {
     music?.setIntensity(Math.min(1, blastLevel * 1.35 + pressureLevel * 0.35));
   }
@@ -128,6 +142,8 @@ export function createAudio(): Audio {
 
     music = createMusic(ctx, musicBus, reverb.input);
     music.setVolume(musicLevel);
+    music.setRecovery(recovering);
+    pushIntensity();
     music.start();
 
     ambience = createAmbience(ctx, sfxBus, reverb.input);
@@ -188,6 +204,10 @@ export function createAudio(): Audio {
       pressureLevel = Math.max(0, Math.min(1, fraction));
       ambience?.setPressure(pressureLevel);
       pushIntensity();
+    },
+    setRecovery(value) {
+      recovering = value;
+      music?.setRecovery(value);
     },
     resolve(outcome) {
       music?.resolve(outcome);
@@ -307,6 +327,22 @@ function encryptSting(ctx: AudioContext, out: AudioNode, heavy: boolean): void {
 type Synth = (ctx: AudioContext, out: AudioNode) => void;
 
 const SYNTHS: Record<SoundName, Synth> = {
+  disconnect(ctx, out) {
+    noiseBurst(ctx, out, 0.055, 0.12, 'bandpass', 1700);
+    tone(ctx, out, 'triangle', 420, 0.12, 0.005, 0.16, 120);
+  },
+  reconnect(ctx, out) {
+    noiseBurst(ctx, out, 0.035, 0.09, 'bandpass', 2200);
+    tone(ctx, out, 'sine', 280, 0.14, 0.02, 0.2, 660);
+  },
+  sensor(ctx, out) {
+    tone(ctx, out, 'sine', 880, 0.1, 0.01, 0.16);
+    tone(ctx, out, 'triangle', 1320, 0.07, 0.12, 0.2);
+  },
+  restart(ctx, out) {
+    tone(ctx, out, 'sine', 140, 0.12, 0.03, 0.65, 560);
+    tone(ctx, out, 'triangle', 700, 0.06, 0.45, 0.25);
+  },
   confirm(ctx, out) {
     // A clean two-note cyan blip.
     tone(ctx, out, 'triangle', 660, 0.18, 0.005, 0.09);
@@ -356,6 +392,17 @@ const SYNTHS: Record<SoundName, Synth> = {
     tone(ctx, out, 'sine', 70, 0.4, 0.005, 0.18); // the thud
     tone(ctx, out, 'square', 620, 0.08, 0.005, 0.05); // a clipped ring
   },
+  handover(ctx, out) {
+    // Conservative two-pulse pager. Task 10 owns the final phone layer and mix.
+    tone(ctx, out, 'square', 760, 0.11, 0.004, 0.11);
+    tone(ctx, out, 'square', 920, 0.08, 0.08, 0.14);
+  },
+  analysis(ctx, out) {
+    // A centred forensic sweep. Its two close tones cue attention without
+    // implying where hidden activity exists on the board.
+    tone(ctx, out, 'sine', 310, 0.08, 0.005, 0.18, 520);
+    tone(ctx, out, 'triangle', 620, 0.05, 0.08, 0.16, 780);
+  },
 };
 
 // --- Ambience: continuous room tone, an escalating pressure undertone, and
@@ -369,7 +416,7 @@ interface Ambience {
 
 function createAmbience(ctx: AudioContext, out: AudioNode, reverbSend: AudioNode): Ambience {
   const bed = ctx.createGain();
-  bed.gain.value = 0.5;
+  bed.gain.value = 0.22;
   bed.connect(out);
 
   // Low room tone: two detuned sub sines plus a filtered noise floor.
@@ -379,7 +426,7 @@ function createAmbience(ctx: AudioContext, out: AudioNode, reverbSend: AudioNode
       osc.type = 'sine';
       osc.frequency.value = f;
       const g = ctx.createGain();
-      g.gain.value = 0.06;
+      g.gain.value = 0.015;
       osc.connect(g).connect(bed);
       osc.start();
     }
@@ -398,7 +445,7 @@ function createAmbience(ctx: AudioContext, out: AudioNode, reverbSend: AudioNode
   // The escalating undertone: a low oscillator whose gain and brightness climb
   // with business pressure, so the room feels the strain before the meter maxes.
   const pressureOsc = ctx.createOscillator();
-  pressureOsc.type = 'sawtooth';
+  pressureOsc.type = 'triangle';
   pressureOsc.frequency.value = 44;
   const pressureFilter = ctx.createBiquadFilter();
   pressureFilter.type = 'lowpass';
@@ -451,7 +498,7 @@ function createAmbience(ctx: AudioContext, out: AudioNode, reverbSend: AudioNode
     },
     setPressure(fraction) {
       const t = ctx.currentTime;
-      pressureGain.gain.setTargetAtTime(fraction * 0.12, t, 0.3);
+      pressureGain.gain.setTargetAtTime(fraction * 0.06, t, 0.3);
       pressureFilter.frequency.setTargetAtTime(120 + fraction * 500, t, 0.3);
     },
   };

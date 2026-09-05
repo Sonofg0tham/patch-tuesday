@@ -13,10 +13,9 @@ import { SIM_CONFIG, type SimConfig } from './config';
 import type { GameState, TurnEvent } from './types';
 import { blastRadius, encryptedCount } from './worm';
 
-// NEAR MISS is redefined for Phase 4: dwell means nodes can arrive encrypted at
-// detection, so "nothing encrypted ever" is unreachable on some seeds. You are
-// judged on the response, not the inherited dwell, so NEAR MISS is "no
-// additional encryption after detection".
+// NEAR MISS is judged on the response, not encryption inherited from the
+// opening dwell. Phase 8 also requires a sound containment declaration and
+// completed recovery of critical services.
 export type Rating = 'NEAR MISS' | 'CONTAINED' | 'REPORTABLE INCIDENT' | 'TOTAL LOSS';
 export type Severity = 'Critical' | 'High' | 'Medium' | 'Low' | 'Info';
 
@@ -112,16 +111,114 @@ const SEVERITY_RANK: Record<Severity, number> = {
   Info: 4,
 };
 
-// Rating thresholds are the review's own definition (not economy tuning): NEAR
-// MISS = no encryption after detection, CONTAINED < 25% blast, REPORTABLE
-// 25-60%, TOTAL LOSS on defeat.
-export function ratingOf(record: RunRecord): Rating {
+interface CoverageGap {
+  turn: number;
+  count: number;
+}
+
+interface IncidentAnalysis {
+  coverageGaps: Map<string, CoverageGap>;
+  prematureDeclarations: LoggedEvent[];
+  containmentConfirmed: LoggedEvent | undefined;
+  reviewFiled: LoggedEvent | undefined;
+  hasPostDetectionEncryption: boolean;
+}
+
+const CRITICAL_SERVICE_TYPES = new Set<NodeType>([
+  'router',
+  'server',
+  'backup',
+  'domain-controller',
+]);
+
+// Reconstructs what the responder knew at each event. Opening EDR coverage is
+// known at detection. A deployed sensor or accepted patch probe expands that
+// knowledge only after its own event is reached in the ordered log.
+function analyseIncident(record: RunRecord, topology: Topology): IncidentAnalysis {
+  const known = new Set(
+    topology.nodes.filter((node) => node.edr).map((node) => node.id),
+  );
+  const coverageGaps = new Map<string, CoverageGap>();
+  const prematureDeclarations: LoggedEvent[] = [];
+  let containmentConfirmed: LoggedEvent | undefined;
+  let reviewFiled: LoggedEvent | undefined;
+  let hasPostDetectionEncryption = false;
+
+  for (const logged of record.log) {
+    const { turn, event } = logged;
+
+    if (event.kind === 'spread-attempt' && event.success && !known.has(event.source)) {
+      if (topology.byId.has(event.source)) {
+        const gap = coverageGaps.get(event.source);
+        if (gap) gap.count += 1;
+        else coverageGaps.set(event.source, { turn, count: 1 });
+      }
+      continue;
+    }
+
+    if (event.kind === 'action' && event.node) {
+      const sensorApplied = event.action === 'scan' && event.outcome === 'applied';
+      const patchProbeAccepted = event.action === 'patch' && event.outcome === 'probe';
+      if (sensorApplied || patchProbeAccepted) known.add(event.node);
+      continue;
+    }
+
+    if (event.kind === 'encrypted') {
+      hasPostDetectionEncryption = true;
+      continue;
+    }
+
+    if (event.kind === 'containment-declaration') {
+      if (event.confirmed) containmentConfirmed ??= logged;
+      else prematureDeclarations.push(logged);
+      continue;
+    }
+
+    if (event.kind === 'review-filed') reviewFiled ??= logged;
+  }
+
+  return {
+    coverageGaps,
+    prematureDeclarations,
+    containmentConfirmed,
+    reviewFiled,
+    hasPostDetectionEncryption,
+  };
+}
+
+function unrecoveredCriticalServices(record: RunRecord, topology: Topology): string[] {
+  return topology.nodes
+    .filter(
+      (node) =>
+        CRITICAL_SERVICE_TYPES.has(node.type) && record.final.nodes[node.id]?.isolated === true,
+    )
+    .map((node) => node.id);
+}
+
+function ratingFrom(
+  record: RunRecord,
+  topology: Topology,
+  analysis: IncidentAnalysis,
+): Rating {
   if (record.final.status === 'lost') return 'TOTAL LOSS';
-  // Encryption events only fire during play turns (dwell events are not logged),
-  // so any 'encrypted' event is encryption the player let happen after detection.
-  const additional = record.log.some((e) => e.event.kind === 'encrypted');
-  if (!additional) return 'NEAR MISS';
-  return blastRadius(record.final) < 0.25 ? 'CONTAINED' : 'REPORTABLE INCIDENT';
+  if (blastRadius(record.final) >= 0.25) return 'REPORTABLE INCIDENT';
+
+  const hasPrematureDeclaration = analysis.prematureDeclarations.length > 0;
+  const hasUnrecoveredCriticalService =
+    analysis.reviewFiled !== undefined && unrecoveredCriticalServices(record, topology).length > 0;
+  if (
+    analysis.hasPostDetectionEncryption ||
+    hasPrematureDeclaration ||
+    hasUnrecoveredCriticalService
+  ) {
+    return 'CONTAINED';
+  }
+  return 'NEAR MISS';
+}
+
+// Rating thresholds are the review's own definition, not economy tuning.
+export function ratingOf(record: RunRecord, topology: Topology): Rating {
+  return ratingFrom(record, topology, analyseIncident(record, topology));
 }
 
 // Builds the whole review. Pure: same record in, same review out.
@@ -135,7 +232,8 @@ export function buildPir(
   const role = (id: string): string => topology.byId.get(id)?.role ?? 'unknown asset';
   const typeOf = (id: string): NodeType => topology.byId.get(id)?.type ?? 'workstation';
 
-  const rating = ratingOf(record);
+  const analysis = analyseIncident(record, topology);
+  const rating = ratingFrom(record, topology, analysis);
   const won = final.status === 'won';
   const abandoned = record.abandoned ?? false;
   const total = topology.nodes.length;
@@ -144,22 +242,39 @@ export function buildPir(
   // --- Metrics ---
   const overrides = record.log.filter((e) => e.event.kind === 'override');
   const emergency = record.log.find(
-    (e) => e.event.kind === 'action' && e.event.action === 'emergency' && e.event.ok,
+    (e) => e.event.kind === 'action' && e.event.action === 'emergency' && e.event.outcome !== 'blocked',
   );
+  const containmentTurn = analysis.containmentConfirmed?.turn;
+  const filingTurn = analysis.reviewFiled?.turn;
+  const recoveryDuration =
+    containmentTurn !== undefined && filingTurn !== undefined
+      ? Math.max(0, filingTurn - containmentTurn)
+      : undefined;
   const metrics: PirMetric[] = [
     { label: 'Time to detect', value: `${TPLUS(1)} (initial access preceded detection by ${dwell} hours)` },
     {
       label: 'Time to contain',
       value: abandoned
         ? `response abandoned at ${TPLUS(final.turn)}`
-        : won
-          ? TPLUS(final.turn)
-          : `not contained (incident lost at ${TPLUS(final.turn)})`,
+        : containmentTurn !== undefined
+          ? TPLUS(containmentTurn)
+          : final.status === 'lost'
+            ? `not contained (incident lost at ${TPLUS(final.turn)})`
+            : 'not recorded',
+    },
+    { label: 'Time to file', value: filingTurn === undefined ? 'not filed' : TPLUS(filingTurn) },
+    {
+      label: 'Recovery duration',
+      value:
+        recoveryDuration === undefined
+          ? 'not applicable'
+          : `${recoveryDuration} hour${recoveryDuration === 1 ? '' : 's'}`,
     },
     {
       label: 'Blast radius',
       value: `${Math.round(blastRadius(final) * 100)}% (${encryptedCount(final)}/${total} encrypted)`,
     },
+    { label: 'Impact', value: String(final.score) },
     { label: 'Downtime', value: `${record.downtimeHours} host-hours isolated` },
     {
       label: 'Backup credits burned',
@@ -203,25 +318,33 @@ export function buildPir(
     }
   }
 
-  // EDR coverage gaps: an uncovered node that spread the worm before it was ever
-  // seen. Grouped by source, dated at its first successful spread.
-  const gapSpreads = new Map<string, { turn: number; count: number }>();
-  for (const { turn, event } of record.log) {
-    if (event.kind !== 'spread-attempt' || !event.success) continue;
-    const src = topology.byId.get(event.source);
-    if (!src) continue;
-    const uncovered = !src.edr && final.nodes[event.source]?.revealed !== true;
-    if (!uncovered) continue;
-    const seen = gapSpreads.get(event.source);
-    if (seen) seen.count += 1;
-    else gapSpreads.set(event.source, { turn, count: 1 });
-  }
-  for (const [id, { turn, count }] of gapSpreads) {
+  // EDR coverage gaps are reconstructed chronologically, so later coverage
+  // cannot rewrite what was unknown when a spread succeeded.
+  for (const [id, { turn, count }] of analysis.coverageGaps) {
     findings.push({
       turn,
       severity: 'High',
       text: `EDR coverage gap on ${label(id)} (${role(id)}) allowed undetected lateral movement: ${count} host${count === 1 ? '' : 's'} infected from it before it was seen.`,
     });
+  }
+
+  for (const declaration of analysis.prematureDeclarations) {
+    findings.push({
+      turn: declaration.turn,
+      severity: 'High',
+      text: 'Containment was declared prematurely while hidden infection remained. The response hour was committed without confirming eradication.',
+    });
+  }
+
+  if (analysis.reviewFiled) {
+    for (const id of unrecoveredCriticalServices(record, topology)) {
+      const type = typeOf(id);
+      findings.push({
+        turn: analysis.reviewFiled.turn,
+        severity: type === 'backup' || type === 'domain-controller' ? 'High' : 'Medium',
+        text: `${label(id)} (${role(id)}) remained isolated when the review was filed; service recovery was incomplete.`,
+      });
+    }
   }
 
   // Encryption that happened on the responder's watch.

@@ -5,6 +5,7 @@
 // matching node on the 3D board; activating it inspects the node.
 
 import type { NodeType, Topology } from '../data/topology';
+import type { PresentationView } from '../sim/telemetry';
 
 const TYPE_ORDER: NodeType[] = [
   'domain-controller',
@@ -29,6 +30,14 @@ export interface RosterHandlers {
 
 export interface Roster {
   setActive(nodeId: string | null): void;
+  render(view: PresentationView): void;
+}
+
+export interface RosterCoverage {
+  kind: 'built-in' | 'sensor' | 'none';
+  glyph: string;
+  label: string;
+  accessibleLabel: string;
 }
 
 export function createRoster(
@@ -37,6 +46,8 @@ export function createRoster(
   handlers: RosterHandlers,
 ): Roster {
   const buttons = new Map<string, HTMLButtonElement>();
+  const states = new Map<string, HTMLElement>();
+  const coverages = new Map<string, HTMLElement>();
 
   for (const type of TYPE_ORDER) {
     const nodes = topology.nodes.filter((n) => n.type === type);
@@ -56,27 +67,29 @@ export function createRoster(
       button.className = 'roster-item';
       button.dataset.nodeId = node.id;
       button.setAttribute('aria-pressed', 'false');
-      // EDR status spoken as text, so coverage is never colour alone.
-      button.setAttribute(
-        'aria-label',
-        `${node.label}, ${node.role}, EDR ${node.edr ? 'covered' : 'not covered'}`,
-      );
 
       const name = document.createElement('span');
       name.className = 'roster-name';
       name.textContent = node.label;
 
-      const edr = document.createElement('span');
-      edr.className = node.edr ? 'roster-edr on' : 'roster-edr off';
-      edr.textContent = node.edr ? 'EDR' : 'no EDR';
-      edr.setAttribute('aria-hidden', 'true');
+      const state = document.createElement('span');
+      state.className = 'roster-state state-unknown';
+      state.textContent = '[?] UNKNOWN';
+      state.setAttribute('aria-hidden', 'true');
 
-      button.append(name, edr);
+      const coverage = document.createElement('span');
+      coverage.className = 'roster-coverage coverage-none';
+      coverage.textContent = '○ NO EDR';
+      coverage.setAttribute('aria-hidden', 'true');
+
+      button.append(name, state, coverage);
       button.addEventListener('focus', () => handlers.onFocus(node.id));
       button.addEventListener('blur', () => handlers.onFocus(null));
       button.addEventListener('click', () => handlers.onActivate(node.id));
 
       buttons.set(node.id, button);
+      states.set(node.id, state);
+      coverages.set(node.id, coverage);
       section.appendChild(button);
     }
     container.appendChild(section);
@@ -91,5 +104,71 @@ export function createRoster(
       activeId = nodeId;
       if (activeId) buttons.get(activeId)?.setAttribute('aria-pressed', 'true');
     },
+    render(view) {
+      for (const node of topology.nodes) {
+        const presentation = view.nodes[node.id];
+        const button = buttons.get(node.id);
+        const state = states.get(node.id);
+        const coverageElement = coverages.get(node.id);
+        if (!presentation || !button || !state || !coverageElement) continue;
+
+        const visible = rosterState(presentation.visibleState, presentation.observed);
+        const isolation = presentation.isolated ? 'isolated' : 'connected';
+        const coverage = deriveRosterCoverage(node.edr, presentation.edr);
+        button.setAttribute(
+          'aria-label',
+          `${node.label}, ${node.role}, visible state ${visible.label.toLowerCase()}, ${isolation}, ${coverage.accessibleLabel}`,
+        );
+        button.dataset.visibleState = visible.className;
+        button.dataset.isolated = String(presentation.isolated);
+        button.dataset.coverage = coverage.kind;
+        state.className = `roster-state state-${visible.className}`;
+        state.textContent = `${visible.glyph} ${visible.label}${presentation.isolated ? ' / CUT' : ''}`;
+        coverageElement.className = `roster-coverage coverage-${coverage.kind}`;
+        coverageElement.textContent = `${coverage.glyph} ${coverage.label}`;
+      }
+    },
   };
+}
+
+export function deriveRosterCoverage(builtIn: boolean, covered: boolean): RosterCoverage {
+  if (builtIn) {
+    return {
+      kind: 'built-in',
+      glyph: '◉',
+      label: 'EDR',
+      accessibleLabel: 'built-in EDR coverage',
+    };
+  }
+  if (covered) {
+    return {
+      kind: 'sensor',
+      glyph: '⊕',
+      label: 'SENSOR',
+      accessibleLabel: 'deployed sensor EDR coverage',
+    };
+  }
+  return {
+    kind: 'none',
+    glyph: '○',
+    label: 'NO EDR',
+    accessibleLabel: 'no EDR coverage',
+  };
+}
+
+function rosterState(
+  state: PresentationView['nodes'][string]['visibleState'],
+  observed: boolean,
+): { className: string; glyph: string; label: string } {
+  if (!observed && state === 'clean') return { className: 'unknown', glyph: '[?]', label: 'UNKNOWN' };
+  switch (state) {
+    case 'clean':
+      return { className: 'clean', glyph: '[+]', label: 'CLEAN' };
+    case 'infected':
+      return { className: 'infected', glyph: '[!]', label: 'INFECTED' };
+    case 'encrypted':
+      return { className: 'encrypted', glyph: '[X]', label: 'ENCRYPTED' };
+    case 'patched':
+      return { className: 'patched', glyph: '[#]', label: 'PATCHED' };
+  }
 }

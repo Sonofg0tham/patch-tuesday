@@ -27,11 +27,12 @@ export interface NodeState {
 
 // A Post-Incident Review finding, recorded as it happens with its timestamp.
 // The full PIR is Phase 4; for now only business overrides are recorded.
-export interface Finding {
-  turn: number;
-  kind: 'business-override';
-  node: string;
-}
+export type Finding =
+  | { turn: number; kind: 'business-override'; node: string }
+  | { turn: number; kind: 'premature-declaration' };
+
+export type IncidentPhase = 'active' | 'recovery';
+export type ActionOutcome = 'applied' | 'probe' | 'blocked';
 
 // The whole run, serialisable and reproducible from its seed. rngState carries
 // the PRNG cursor so the run can be resumed or replayed exactly. Everything
@@ -53,6 +54,7 @@ export interface GameState {
   pressure: number;
   /** PIR findings recorded during the run (currently business overrides). */
   findings: Finding[];
+  phase: IncidentPhase;
   status: 'playing' | 'won' | 'lost';
   lossReason?: 'domain-controller' | 'blast-radius';
   /** The node the worm entered on, for the PIR's initial-access finding. */
@@ -74,7 +76,11 @@ export interface PlayerAction {
 }
 
 // A move in a replayable game: a player action or the end of the turn.
-export type Move = PlayerAction | { kind: 'end-turn' };
+export type Move =
+  | PlayerAction
+  | { kind: 'end-turn' }
+  | { kind: 'declare-containment' }
+  | { kind: 'file-review' };
 
 // Everything that happened, in order. Drives the spread animation, the debug
 // overlay, and the action log. Nothing here is rendering-specific.
@@ -83,8 +89,11 @@ export type TurnEvent =
   | { kind: 'spread-attempt'; source: string; target: string; roll: number; success: boolean }
   | { kind: 'infected'; node: string }
   | { kind: 'encrypted'; node: string }
-  | { kind: 'action'; action: ActionKind; node?: string; ok: boolean; reason?: string }
-  | { kind: 'override'; node: string };
+  | { kind: 'override'; node: string }
+  | { kind: 'action'; action: ActionKind; node?: string; outcome: ActionOutcome; apSpent: number; reason?: string }
+  | { kind: 'containment-declaration'; confirmed: boolean }
+  | { kind: 'recovery-hour' }
+  | { kind: 'review-filed' };
 
 export interface TurnResult {
   nextState: GameState;

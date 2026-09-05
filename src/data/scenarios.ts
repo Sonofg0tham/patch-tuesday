@@ -12,6 +12,11 @@ export interface Scenario {
   kind: 'authored' | 'random';
   /** A one-line briefing blurb for the incident-briefing screen. */
   blurb: string;
+  /** Public detection summary and first priorities for the run-page handover. */
+  handover: {
+    alert: string;
+    priorities: readonly [string, string];
+  };
   build(seed: string): Topology;
 }
 
@@ -20,6 +25,13 @@ export const MERIDIAN: Scenario = {
   name: 'MERIDIAN MUTUAL // HQ ESTATE',
   kind: 'authored',
   blurb: 'The hand-authored estate. The same board every time: learn it.',
+  handover: {
+    alert: 'Ransomware indicators confirmed across the HQ estate.',
+    priorities: [
+      'Establish trustworthy visibility.',
+      'Protect the Domain Controller and backup path.',
+    ],
+  },
   build: () => loadTopology(),
 };
 
@@ -28,6 +40,13 @@ export const RANDOM: Scenario = {
   name: 'RANDOM ESTATE',
   kind: 'random',
   blurb: 'A fresh procedural estate per seed. You have never seen this one.',
+  handover: {
+    alert: 'Ransomware indicators confirmed across an unfamiliar estate.',
+    priorities: [
+      'Map coverage gaps before trusting a clean display.',
+      'Break observed propagation routes.',
+    ],
+  },
   build: (seed) => generateTopology(seed),
 };
 

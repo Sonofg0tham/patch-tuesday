@@ -20,7 +20,7 @@ import type { NodeType } from '../data/topology';
 // Height of the top face of each type, so markers and labels can float a
 // consistent gap above whatever they sit on.
 const TOP_HEIGHT: Record<NodeType, number> = {
-  workstation: 0.85,
+  workstation: 1.7, // clears the miniature desk and monitor assembly
   server: 2.0,
   router: 0.62, // the puck is still lowest; this clears the aerial stubs
   backup: 1.4,
@@ -235,26 +235,6 @@ export function buildOutlineGeometries(): Record<NodeType, THREE.BufferGeometry>
     backup: at(new THREE.CylinderGeometry(0.64, 0.64, 1.4, 22), 0, 0.7, 0),
     'domain-controller': ziggurat,
   };
-}
-
-// A broken ring for the threat forecast: six arc segments with gaps between
-// them, lying flat at a node's base. Deliberately a different shape from the
-// solid isolation ring, so "the worm could reach this next turn" and "this is
-// cut off" can never be confused at a glance, and so the cue survives the
-// greyscale test rather than relying on its colour.
-export function buildForecastRingGeometry(): THREE.BufferGeometry {
-  const segments = 6;
-  const arc = (Math.PI * 2) / segments;
-  const parts: THREE.BufferGeometry[] = [];
-  for (let i = 0; i < segments; i += 1) {
-    // Each segment covers 60% of its slot; the other 40% is the gap.
-    const piece = new THREE.TorusGeometry(1.05, 0.05, 8, 8, arc * 0.6);
-    piece.rotateZ(i * arc);
-    parts.push(piece);
-  }
-  const ring = merge(parts, 'forecast ring');
-  ring.rotateX(Math.PI / 2); // lie flat on the floor
-  return ring;
 }
 
 // A thin ring that floats above EDR-covered nodes: coverage is an icon, never

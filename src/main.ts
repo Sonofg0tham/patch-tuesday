@@ -10,6 +10,11 @@ import '@fontsource/chakra-petch/600.css';
 import '@fontsource/fira-code/400.css';
 import '@fontsource/fira-code/500.css';
 import './ui/style.css';
+import './ui/incident-command.css';
+import './ui/company.css';
+import { createResponseGuide, nextResponseStep } from './ui/response-guide';
+import { createCompanyLayout } from './ui/company-layout';
+import { createAssetNotices } from './ui/asset-notices';
 
 import { applyPaletteToCss } from './config/palette';
 import { createAudio } from './audio/audio';
@@ -35,19 +40,40 @@ import { createPostFx } from './render/postfx';
 import { tickMaterials } from './render/materials';
 import { createPointerPicker } from './render/picking';
 import { createSpreadAnimator } from './render/spread-animation';
+import { ActionEffectPool } from './render/action-effects';
+import { createTurnDirector, TURN_DIRECTOR_TIMING } from './render/turn-director';
+import { ForecastRouteLayer } from './render/forecast-routes';
 import { createOverlay } from './ui/overlay';
 import { createRoster } from './ui/roster';
-import { createHud } from './ui/hud';
+import { createHud, createSituationPanel } from './ui/hud';
 import { createDebug } from './ui/debug';
 import { createActionBar } from './ui/actions';
+import { createIncidentControls } from './ui/incident-controls';
+import { createTimeline } from './ui/timeline';
+import { createHandover } from './ui/handover';
 import { createPirScreen } from './ui/pir';
 import { createRunbook } from './ui/menu';
 import { createSettingsPanel } from './ui/settings-panel';
 import { createPauseMenu } from './ui/pause';
+import { createIncidentPauseCoordinator } from './ui/pause-coordinator';
+import { createResolutionStage } from './ui/resolution-stage';
 import { SIM_CONFIG } from './sim/config';
-import { createInitialState, toVisibleView, blastRadius, encryptedCount } from './sim/worm';
-import { applyPlayerAction, endTurn } from './sim/game';
+import { createInitialState, blastRadius, encryptedCount } from './sim/worm';
+import {
+  projectTurnEvents,
+  toPresentationView,
+  type NodePresentationState,
+  type ObservableTurnEvent,
+  type PresentationView,
+} from './sim/telemetry';
+import { applyPlayerAction, declareContainment, endTurn, fileReview } from './sim/game';
 import { forecastSpread } from './sim/forecast';
+import {
+  deriveActionConsequences,
+  deriveNodeInspectionModel,
+  deriveObjective,
+  type ActionConsequence,
+} from './ui/situation';
 import { RunRecorder, buildPir, type RunRecord } from './sim/pir';
 import type { ActionKind, GameState, PlayerAction, TurnEvent, VisibleState } from './sim/types';
 
@@ -69,9 +95,13 @@ const scenario = scenarioById(scenarioParam);
 const seed = params.get('seed') ?? randomSeed();
 const topology = scenario.build(seed);
 
+const companyLayout = createCompanyLayout(() => context.fitEstate());
 const context = createScene(topology);
+const assetNotices = createAssetNotices(topology, context.camera);
 const board = createBoard(topology, context.environment);
 context.scene.add(board.group);
+const forecastRoutes = new ForecastRouteLayer(topology);
+context.scene.add(forecastRoutes.group);
 
 // The post-processing chain. Bloom plus the film grade, with a working "off"
 // path at the LOW tier for weak hardware. Grain and scanlines are pattern and
@@ -80,12 +110,23 @@ context.scene.add(board.group);
 const postfx = createPostFx(context.renderer, context.scene, context.camera, renderQuality());
 postfx.setFilmAmount(motionReduced() ? 0 : effectivePulseScale());
 
-const overlay = createOverlay(topology);
+const overlay = createOverlay();
 const hud = createHud();
+const situationPanel = createSituationPanel(mustFind('hud'));
+const responseGuide = createResponseGuide(mustFind('company-sidebar'), (id) => {
+  if (!canIssueLifecycleCommand()) return;
+  if (!mustFind('roster').hidden) mustFind('register-toggle').click();
+  select(id);
+  mustFind('inspector').scrollIntoView({ block: 'nearest', behavior: 'instant' });
+});
+const timeline = createTimeline(mustFind('timeline'));
 const rosterContainer = mustFind('roster');
 const debug = createDebug(mustFind('debug'));
 const pirScreen = createPirScreen(mustFind('pir'));
 const animator = createSpreadAnimator(board, topology);
+const actionEffects = new ActionEffectPool(topology, { reducedMotion: motionReduced() });
+context.scene.add(actionEffects.group);
+const resolutionStage = createResolutionStage(mustFind('resolution-stage'));
 const audio = createAudio();
 const shake = createScreenShake();
 
@@ -102,26 +143,13 @@ function unlockAudio(): void {
 window.addEventListener('pointerdown', unlockAudio);
 window.addEventListener('keydown', unlockAudio);
 
-// The threat is audible as it moves: a tense tick as each creep lands, the
-// signature sting as a node encrypts (heavier for the crown jewels), and a
-// small camera knock on the lock.
-// A node's x position across the estate becomes its place in the stereo field,
-// so during resolution you can hear which side of the board the worm is working
-// on before you have found it on screen.
+// Observable board positions become stereo positions. Hidden telemetry never
+// calls this helper and stays centred, so audio cannot reveal a secret route.
 function panFor(nodeId: string): number {
   const node = topology.byId.get(nodeId);
   if (!node || topology.halfWidth <= 0) return 0;
   return Math.max(-1, Math.min(1, node.x / topology.halfWidth)) * 0.75;
 }
-
-animator.onReveal((nodeId) => audio.play('spread', { pan: panFor(nodeId) }));
-animator.onLock((nodeId) => {
-  const type = topology.byId.get(nodeId)?.type;
-  audio.play(type === 'domain-controller' || type === 'backup' ? 'encrypt-heavy' : 'encrypt', {
-    pan: panFor(nodeId),
-  });
-  shake.add(0.25);
-});
 
 // The war-room header names the estate under attack.
 mustFind('hud-subtitle').textContent = topology.name;
@@ -131,11 +159,24 @@ const initialState: GameState = createInitialState(topology, seed);
 // same protocol the headless bots use, so a played review is built identically.
 const recorder = new RunRecorder();
 let state: GameState = initialState;
-let currentView: Record<string, VisibleState> = toVisibleView(state, topology);
+let currentPresentation = toPresentationView(state, topology);
+let currentView: Record<string, VisibleState> = visibleStates(currentPresentation);
 let lastEvents: TurnEvent[] = [];
 let selectedId: string | null = null;
 let ended = false;
 let paused = false;
+let handoverActive = !briefMode;
+let latestFps: number | null = null;
+let previewKind: ActionKind | null = null;
+let resolutionLocked = false;
+let pendingResolution: { nextState: GameState; trueEvents: TurnEvent[] } | null = null;
+
+const director = createTurnDirector({
+  onAnalysis: presentAnalysis,
+  onBeat: presentResolutionBeat,
+  onSettle: settleResolution,
+  onComplete: completeResolution,
+});
 
 // Highlight = whatever the user is pointing at or has keyboard-focused.
 // Selection = what the user chose to act on. Pointer hover wins over keyboard.
@@ -147,12 +188,35 @@ function refreshHighlight(): void {
 }
 
 function refreshInspector(): void {
-  const node = selectedId ? (topology.byId.get(selectedId) ?? null) : null;
-  const status = selectedId ? currentView[selectedId] : undefined;
-  const ns = selectedId ? state.nodes[selectedId] : undefined;
-  // A deployed sensor shows as coverage, but built-in EDR is not a "sensor".
-  const sensored = Boolean(ns?.revealed) && !(node?.edr ?? false);
-  overlay.inspect(node, status, ns?.isolated, sensored, ns?.isolationAge);
+  overlay.inspect(deriveNodeInspectionModel(selectedId, currentPresentation, topology));
+}
+
+function refreshPreview(): void {
+  board.setActionPreview(selectedId, resolutionLocked || paused || handoverActive ? null : previewKind);
+  if (previewKind === null) {
+    overlay.preview(null);
+    return;
+  }
+  if (previewKind === 'emergency') {
+    const emergencyPreview: ActionConsequence = {
+      action: 'emergency',
+      label: 'Emergency budget',
+      apCost: 0,
+      apGain: SIM_CONFIG.emergencyApBonus,
+    };
+    overlay.preview(emergencyPreview);
+    return;
+  }
+  if (selectedId === null) {
+    overlay.preview(null);
+    return;
+  }
+  const consequence = deriveActionConsequences(
+    selectedId,
+    currentPresentation,
+    topology,
+  ).actions.find((action) => action.action === previewKind);
+  overlay.preview(consequence ?? null);
 }
 
 function select(nodeId: string | null): void {
@@ -161,27 +225,53 @@ function select(nodeId: string | null): void {
   roster.setActive(nodeId);
   actionBar.setReason('', true);
   refreshInspector();
+  refreshPreview();
 }
 
-function updateStatus(): void {
-  const total = topology.nodes.length;
-  const pct = Math.round(blastRadius(state) * 100);
-  const note =
-    state.status === 'lost'
-      ? state.lossReason === 'domain-controller'
-        ? ' · DOMAIN CONTROLLER LOST'
-        : ' · ESTATE OVERRUN'
-      : state.status === 'won'
-        ? ' · CONTAINED'
-        : '';
-  hud.setStatus(`${encryptedCount(state)} / ${total} encrypted (${pct}%)${note}`, state.status === 'lost');
+function canOfferDeclaration(): boolean {
+  return (
+    state.status === 'playing' &&
+    state.phase === 'active' &&
+    Object.values(currentPresentation.nodes).every((node) => node.visibleState !== 'infected')
+  );
+}
+
+function renderIncidentControls(): void {
+  const resolving = resolutionLocked;
+  incidentControls.render({ phase: state.phase }, canOfferDeclaration(), resolving);
+  incidentControls.setEnabled(
+    !paused && !handoverActive && !ended && state.status === 'playing' && !resolving,
+  );
+}
+
+function renderSituation(): void {
+  responseGuide.render(nextResponseStep(currentPresentation, topology, {
+    phase: state.phase, pressure: state.pressure, backupCredits: state.backupCredits, ap: state.ap,
+  }), canIssueLifecycleCommand());
+  situationPanel.render({
+    phase: state.phase,
+    objective: deriveObjective(currentPresentation, topology, {
+      phase: state.phase,
+      pressure: state.pressure,
+      backupCredits: state.backupCredits,
+    }),
+    threatSummary: observedThreatSummary(currentPresentation),
+    ap: state.ap,
+    apPerHour: SIM_CONFIG.apPerTurn,
+    backupCredits: state.backupCredits,
+    impact: state.score,
+    pressure: state.pressure,
+    pressureMax: SIM_CONFIG.pressureMax,
+    seed,
+    fps: latestFps,
+  });
 }
 
 // Refresh just the HUD numbers (used immediately on End Turn, before the board
 // animation has finished).
 function renderHud(): void {
   hud.setTurn(state.turn);
-  updateStatus();
+  renderSituation();
   actionBar.setAp(state.ap, SIM_CONFIG.apPerTurn);
   actionBar.setCredits(state.backupCredits);
   actionBar.setScore(state.score);
@@ -190,32 +280,45 @@ function renderHud(): void {
   // rings warm with pressure, the undertone climbs, and the keyboard clatter of
   // the war room thickens as the estate falls.
   const pressureFraction = state.pressure / SIM_CONFIG.pressureMax;
-  const blast = blastRadius(state);
+  const blast = observableCompromiseFraction(currentPresentation);
   board.setPressure(pressureFraction);
   audio.setPressure(pressureFraction);
+  audio.setRecovery(state.phase === 'recovery');
   audio.setBlastIntensity(blast);
   // The image itself sickens as the estate falls: the grade bleeds magenta into
   // the shadows, so a board in trouble is legible from the colour of the room
   // before you have read a single node.
   postfx.setInfectionLevel(blast);
+  renderIncidentControls();
 }
 
-// Full refresh: board, isolation, HUD, inspector, debug, and the end screen.
-// Called after actions (instant) and once a turn's spread animation completes.
-function renderState(): void {
-  currentView = toVisibleView(state, topology);
-  board.applyView(currentView);
-  for (const node of topology.nodes) {
-    board.setIsolated(node.id, Boolean(state.nodes[node.id].isolated));
-    // A sensor ring only for coverage the player added, not built-in EDR.
-    board.setSensor(node.id, Boolean(state.nodes[node.id].revealed) && !node.edr);
+// Render one fog-safe snapshot. During theatre this may be a staged view; only
+// settle is allowed to open a terminal PIR, so a loss never arrives before its
+// public encryption beat.
+function renderPresentation(
+  presentation: PresentationView,
+  options: { animateEncryptionNode?: string; allowTerminal?: boolean } = {},
+): void {
+  currentPresentation = presentation;
+  currentView = visibleStates(currentPresentation);
+  if (options.animateEncryptionNode) {
+    board.setVisibleState(options.animateEncryptionNode, 'encrypted', !motionReduced());
   }
+  board.applyPresentation(currentPresentation);
   renderHud();
   refreshForecast();
   roster.setActive(selectedId);
+  roster.render(currentPresentation);
   refreshInspector();
+  refreshPreview();
   if (debug.isVisible()) debug.render(state, topology, lastEvents);
-  if (state.status !== 'playing') endGame();
+  if (options.allowTerminal !== false && state.status !== 'playing') endGame();
+}
+
+// Full refresh from the current simulation state. Player actions and immediate
+// phase transitions use this path; hourly resolution uses staged projections.
+function renderState(): void {
+  renderPresentation(toPresentationView(state, topology));
 }
 
 // The threat forecast assist: ring every node the worm could reach next turn,
@@ -223,20 +326,24 @@ function renderState(): void {
 // Off unless the player asked for it.
 function refreshForecast(): void {
   if (!threatForecastOn() || state.status !== 'playing') {
-    board.setForecast([]);
+    forecastRoutes.setForecast({ atRisk: [], edges: [] });
     return;
   }
-  board.setForecast(forecastSpread(currentView, state, topology).atRisk);
+  const forecast = forecastSpread(currentPresentation, topology);
+  forecastRoutes.setForecast(forecast);
 }
 
 function setInputsEnabled(enabled: boolean): void {
-  hud.setEndTurnEnabled(enabled);
   actionBar.setEnabled(enabled);
+  incidentControls.setEnabled(enabled);
+  responseGuide.setEnabled(enabled);
 }
 
 function endGame(abandoned = false): void {
   if (ended) return;
   ended = true;
+  resolutionStage.clear();
+  assetNotices.clear();
   setInputsEnabled(false);
 
   const record: RunRecord = {
@@ -279,24 +386,61 @@ function endGame(abandoned = false): void {
 // Applies one player action to the selected node (or none, for emergency),
 // shows the outcome, and re-renders. Blocked actions surface their reason.
 function act(kind: ActionKind): void {
-  if (paused || animator.isPlaying() || state.status !== 'playing') return;
+  if (
+    briefMode ||
+    paused ||
+    handoverActive ||
+    resolutionLocked ||
+    state.status !== 'playing'
+  ) {
+    return;
+  }
   const needsNode = kind !== 'emergency';
   if (needsNode && !selectedId) {
     actionBar.setReason('select a node first', false);
     return;
   }
   const action: PlayerAction = { kind, node: needsNode ? (selectedId ?? undefined) : undefined };
-  const result = applyPlayerAction(state, action, topology);
-  if (result.ok) recorder.record(state.turn, result.events);
+  const before = state;
+  const result = applyPlayerAction(before, action, topology);
+  if (result.ok) {
+    recorder.record(before.turn, result.events);
+    const observable = projectTurnEvents(result.events, before, result.state, topology);
+    timeline.appendResolution(result.state.turn, observable, { labelOf: nodeLabel });
+    const applied = result.events.find(
+      (event) => event.kind === 'action' && event.outcome === 'applied',
+    );
+    if (applied?.kind === 'action') {
+      actionEffects.play(applied.action, applied.node);
+      if (applied.action === 'restore' && applied.node) board.restartEquipment(applied.node);
+    }
+    observable.forEach((event) => assetNotices.show(event));
+  }
   state = result.state;
-  actionBar.setReason(result.ok ? '' : (result.reason ?? ''), result.ok);
+  actionBar.setReason(result.ok ? (result.reason ?? '') : (result.reason ?? ''), result.ok);
   // A clean confirm when an action lands, a distinct denied when it is blocked
   // (alongside the on-screen reason).
-  audio.play(result.ok ? 'confirm' : 'denied');
+  const actionSound = { scan: 'sensor', isolate: 'disconnect', reconnect: 'reconnect', patch: 'confirm', restore: 'restart', emergency: 'confirm' } as const;
+  audio.play(result.ok ? actionSound[kind] : 'denied', { pan: selectedId && needsNode ? panFor(selectedId) : 0 });
   renderState();
 }
 
-const actionBar = createActionBar(mustFind('action-bar'), { onAction: act });
+const actionBar = createActionBar(mustFind('action-bar'), {
+  onAction: act,
+  onPreview(kind) {
+    previewKind = kind;
+    refreshPreview();
+  },
+});
+
+const incidentControls = createIncidentControls(mustFind('incident-controls'), {
+  onEndHour: resolveCurrentHour,
+  onDeclareContainment: declareCurrentContainment,
+  onFileReview: fileCurrentReview,
+  onSkip() {
+    director.skip();
+  },
+});
 
 const roster = createRoster(rosterContainer, topology, {
   onFocus(nodeId) {
@@ -318,50 +462,230 @@ createPointerPicker(context, board, {
   },
 });
 
-// End Turn: resolve the turn in the sim, refresh the HUD immediately, then let
-// the animator replay the spread. Inputs are locked until the replay finishes.
-hud.onEndTurn(() => {
-  if (paused || animator.isPlaying() || state.status !== 'playing') return;
-  const before = currentView;
-  const turnNow = state.turn;
-  const result = endTurn(state, topology);
-  state = result.nextState;
-  lastEvents = result.events;
-  recorder.record(turnNow, result.events);
-  recorder.tickDowntime(state);
-  currentView = toVisibleView(state, topology);
-  // Announce any business override the turn it happens; blank turns clear it.
-  const overrides = lastEvents.filter(
-    (e): e is Extract<TurnEvent, { kind: 'override' }> => e.kind === 'override',
-  );
-  hud.setNotice(
-    overrides.length > 0
-      ? `Business pressure forced ${overrides.map((e) => topology.byId.get(e.node)?.label ?? e.node).join(', ')} back online`
-      : '',
-  );
-  // A business override gets its own event on the board and in the room: the
-  // reconnected node flashes, a phone-slam sound, and a jolt.
-  for (const e of overrides) {
-    board.flashOverride(e.node);
-    audio.play('override', { pan: panFor(e.node) });
-    shake.add(0.6);
-  }
-  renderHud();
-  setInputsEnabled(false);
-  animator.play(before, currentView);
-});
+function resolveCurrentHour(): void {
+  if (!canIssueLifecycleCommand()) return;
+  const before = state;
+  const beforePresentation = toPresentationView(before, topology);
+  resolveHourly(before, beforePresentation, endTurn(before, topology));
+}
 
-animator.onComplete(() => {
+function declareCurrentContainment(): void {
+  if (!canIssueLifecycleCommand() || !canOfferDeclaration()) return;
+  const before = state;
+  const beforePresentation = toPresentationView(before, topology);
+  const result = declareContainment(before, topology);
+  if (result.events.length === 0) return;
+  const confirmed = result.events.some(
+    (event) => event.kind === 'containment-declaration' && event.confirmed,
+  );
+  if (!confirmed) {
+    resolveHourly(before, beforePresentation, result);
+    return;
+  }
+
+  recordImmediateResolution(before, result.nextState, result.events);
   renderState();
-  if (state.status === 'playing') setInputsEnabled(true);
+  incidentControls.focusPrimary();
+}
+
+function fileCurrentReview(): void {
+  if (!canIssueLifecycleCommand() || state.phase !== 'recovery') return;
+  const before = state;
+  const result = fileReview(before);
+  if (result.events.length === 0) return;
+  recordImmediateResolution(before, result.nextState, result.events);
+  renderState();
+}
+
+function resolveHourly(
+  beforeState: GameState,
+  beforePresentation: PresentationView,
+  result: { nextState: GameState; events: TurnEvent[] },
+  instant = false,
+): void {
+  const turnNow = beforeState.turn;
+  recorder.record(turnNow, result.events);
+  recorder.tickDowntime(result.nextState);
+
+  const observable = projectTurnEvents(
+    result.events,
+    beforeState,
+    result.nextState,
+    topology,
+  );
+  const afterPresentation = toPresentationView(result.nextState, topology);
+  pendingResolution = { nextState: result.nextState, trueEvents: result.events };
+  resolutionLocked = true;
+  animator.clear();
+  resolutionStage.clear();
+  setInputsEnabled(false);
+  renderIncidentControls();
+
+  if (instant) {
+    settleResolution(afterPresentation, observable);
+    completeResolution();
+    return;
+  }
+
+  director.play(
+    { before: beforePresentation, after: afterPresentation, events: observable },
+    { reducedMotion: motionReduced() },
+    performance.now() / 1000,
+  );
+}
+
+function recordImmediateResolution(
+  beforeState: GameState,
+  nextState: GameState,
+  events: TurnEvent[],
+): void {
+  recorder.record(beforeState.turn, events);
+  const observable = projectTurnEvents(events, beforeState, nextState, topology);
+  timeline.appendResolution(nextState.turn, observable, { labelOf: nodeLabel });
+  state = nextState;
+  lastEvents = events;
+}
+
+function presentAnalysis(view: PresentationView): void {
+  resolutionStage.showAnalysis({
+    reducedMotion: motionReduced(),
+    durationMs: TURN_DIRECTOR_TIMING.analysisLeadSeconds * 1000,
+  });
+  renderPresentation(view, { allowTerminal: false });
+  hud.setNotice('Forensic telemetry sweep in progress', 'defence');
+  audio.play('analysis');
+}
+
+function presentResolutionBeat(
+  event: ObservableTurnEvent,
+  _index: number,
+  view: PresentationView,
+): void {
+  resolutionStage.clear();
+  assetNotices.show(event);
+  renderPresentation(view, {
+    animateEncryptionNode: event.kind === 'encrypted' ? event.node : undefined,
+    allowTerminal: false,
+  });
+
+  switch (event.kind) {
+    case 'attempt':
+      animator.trace(event.source, event.target);
+      audio.play('spread', { pan: panFor(event.target) });
+      break;
+    case 'telemetry-gap':
+      animator.pulseTelemetryGap(event.attempts);
+      audio.play('spread');
+      break;
+    case 'encrypted': {
+      const type = topology.byId.get(event.node)?.type;
+      audio.play(
+        type === 'domain-controller' || type === 'backup' ? 'encrypt-heavy' : 'encrypt',
+        { pan: panFor(event.node) },
+      );
+      shake.add(0.25);
+      break;
+    }
+    case 'override':
+      board.flashOverride(event.node);
+      audio.play('override', { pan: panFor(event.node) });
+      shake.add(0.6);
+      break;
+    case 'containment-declaration':
+      if (!event.confirmed) audio.play('denied');
+      break;
+    case 'infected':
+    case 'action':
+    case 'recovery-hour':
+    case 'review-filed':
+      break;
+  }
+}
+
+function settleResolution(
+  view: PresentationView,
+  events: readonly ObservableTurnEvent[],
+): void {
+  resolutionStage.clear();
+  const pending = pendingResolution;
+  if (pending === null) return;
+  pendingResolution = null;
+  state = pending.nextState;
+  lastEvents = pending.trueEvents;
+  animator.clear();
+  timeline.appendResolution(state.turn, events, { labelOf: nodeLabel });
+  const notice = settledResolutionNotice(events);
+  hud.setNotice(notice.text, notice.tone);
+  renderPresentation(view);
+}
+
+function completeResolution(): void {
+  resolutionStage.clear();
+  resolutionLocked = false;
+  renderIncidentControls();
+  if (state.status === 'playing' && !paused && !handoverActive && !ended) {
+    setInputsEnabled(true);
+    incidentControls.focusPrimary();
+  }
+}
+
+function settledResolutionNotice(
+  events: readonly ObservableTurnEvent[],
+): { text: string; tone: 'defence' | 'uncertainty' } {
+  const overrides = events.filter(
+    (event): event is Extract<ObservableTurnEvent, { kind: 'override' }> =>
+      event.kind === 'override',
+  );
+  if (overrides.length > 0) {
+    return {
+      text: `Business pressure returned ${overrides.map((event) => nodeLabel(event.node)).join(', ')} to service`,
+      tone: 'uncertainty',
+    };
+  }
+  if (events.some((event) => event.kind === 'telemetry-gap')) {
+    return {
+      text: 'Telemetry uncertainty recorded. Reassess visible coverage.',
+      tone: 'uncertainty',
+    };
+  }
+  return { text: '', tone: 'defence' };
+}
+
+function canIssueLifecycleCommand(): boolean {
+  return (
+    !paused &&
+    !handoverActive &&
+    !resolutionLocked &&
+    !ended &&
+    state.status === 'playing'
+  );
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) director.interrupt();
 });
 
 // Board hotkeys: 'd' toggles the true-vs-visible debug table, 'f' toggles the
 // threat forecast assist. Both ignored while typing.
 window.addEventListener('keydown', (event) => {
-  if (event.metaKey || event.ctrlKey) return;
+  if (
+    briefMode ||
+    paused ||
+    handoverActive ||
+    resolutionLocked ||
+    ended ||
+    settingsPanel.isOpen()
+  ) {
+    return;
+  }
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
   const active = document.activeElement;
-  if (active instanceof HTMLElement && ['INPUT', 'TEXTAREA'].includes(active.tagName)) return;
+  if (
+    active instanceof HTMLElement &&
+    (['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName) || active.isContentEditable)
+  ) {
+    return;
+  }
   if (event.key === 'd') {
     debug.toggle();
     debug.render(state, topology, lastEvents);
@@ -370,11 +694,26 @@ window.addEventListener('keydown', (event) => {
   if (event.key === 'f' || event.key === 'F') {
     const on = toggleThreatForecast();
     refreshForecast();
-    hud.setNotice(on ? 'Threat forecast on' : 'Threat forecast off');
+    hud.setNotice(on ? 'Threat forecast on' : 'Threat forecast off', 'defence');
   }
 });
 
-hud.setSeed(seed);
+const handover = createHandover(mustFind('handover'), {
+  onAccept() {
+    // Both calls stay in the button's click stack, satisfying browser autoplay
+    // policy without navigating away from the run document.
+    unlockAudio();
+    audio.play('handover');
+  },
+  onComplete() {
+    handoverActive = false;
+    paused = false;
+    renderState();
+    if (state.status === 'playing') setInputsEnabled(true);
+    incidentControls.focusPrimary();
+  },
+});
+
 select(null);
 renderState();
 
@@ -385,8 +724,10 @@ const settingsPanel = createSettingsPanel(mustFind('settings'), {
     audio.setMasterVolume(s.masterVolume);
     audio.setMusicVolume(s.musicVolume);
     audio.setSfxVolume(s.sfxVolume);
+    actionEffects.setReducedMotion(motionReduced());
     postfx.setFilmAmount(motionReduced() ? 0 : effectivePulseScale());
     refreshForecast();
+    renderSituation();
   },
   onClose: () => {},
 });
@@ -399,16 +740,27 @@ if (briefMode) {
 } else {
   // In a run: Escape opens the pause menu. Abandoning files the PIR for the run
   // so far, marked ABANDONED.
+  // The menu only invokes these closures after construction, once both sides
+  // of the small coordinator boundary exist.
   const pauseMenu = createPauseMenu(mustFind('pause'), {
-    onResume: () => {
-      paused = false;
-      if (state.status === 'playing' && !animator.isPlaying()) setInputsEnabled(true);
-    },
+    onResume: () => pauseCoordinator.resume(),
     onSettings: () => settingsPanel.open(),
-    onAbandon: () => {
-      pauseMenu.close();
-      endGame(true);
+    onAbandon: () => pauseCoordinator.abandon(),
+  });
+  const pauseCoordinator = createIncidentPauseCoordinator({
+    isResolutionLocked: () => resolutionLocked,
+    isEnded: () => ended,
+    canResumeInputs: () =>
+      state.status === 'playing' && !resolutionLocked && !ended && !handoverActive,
+    setPaused(value) {
+      paused = value;
     },
+    setInputsEnabled,
+    interruptResolution: () => director.interrupt(),
+    openPause: () => pauseMenu.open(),
+    closePause: () => pauseMenu.close(),
+    endAbandonedRun: () => endGame(true),
+    focusPrimary: () => incidentControls.focusPrimary(),
   });
 
   window.addEventListener('keydown', (event) => {
@@ -421,11 +773,27 @@ if (briefMode) {
     if (pauseMenu.isOpen()) {
       pauseMenu.close();
     } else {
-      paused = true;
-      setInputsEnabled(false);
-      pauseMenu.open();
+      pauseCoordinator.requestPause();
     }
   });
+
+  setInputsEnabled(false);
+  handover.show(
+    {
+      estate: topology.name,
+      alert: scenario.handover.alert,
+      priorities: scenario.handover.priorities,
+      monitoredPercent:
+        (topology.nodes.filter((node) => node.edr).length / topology.nodes.length) * 100,
+      apPerHour: SIM_CONFIG.apPerTurn,
+      backupCredits: state.backupCredits,
+      lossConditions: [
+        'Domain Controller encryption',
+        `${Math.round(SIM_CONFIG.lossBlastRadius * 100)}% estate encryption`,
+      ],
+    },
+    { reducedMotion: motionReduced() },
+  );
 }
 
 // Rolling fps: count frames and refresh the readout twice a second.
@@ -469,10 +837,14 @@ function tick(): void {
 
   if (resizeIfNeeded(context)) {
     postfx.setSize(window.innerWidth, window.innerHeight);
+    context.fitEstate();
   }
   context.controls.update();
+  assetNotices.tick(seconds);
   clampPan(context, topology);
+  director.tick(seconds);
   animator.update(seconds);
+  actionEffects.tick(seconds);
   board.tick(seconds); // pulse, encryption transitions, override flashes
   tickMaterials(seconds); // the pulses travelling along the cables
   context.tickAtmosphere(seconds); // the dust in the light
@@ -488,7 +860,8 @@ function tick(): void {
   const elapsed = now - windowStart;
   if (elapsed >= 500) {
     const fps = (frames * 1000) / elapsed;
-    overlay.setFps(fps);
+    latestFps = fps;
+    renderSituation();
     considerQualityDrop(fps);
     frames = 0;
     windowStart = now;
@@ -501,6 +874,62 @@ function mustFind(id: string): HTMLElement {
   const element = document.getElementById(id);
   if (!element) throw new Error(`#${id} missing from index.html`);
   return element;
+}
+
+window.addEventListener('pagehide', (event) => {
+  if (event.persisted) return;
+  companyLayout.dispose();
+  assetNotices.dispose();
+  board.dispose();
+});
+
+function visibleStates(view: PresentationView): Record<string, VisibleState> {
+  return Object.fromEntries(
+    Object.entries(view.nodes).map(([id, node]) => [id, node.visibleState]),
+  );
+}
+
+function nodeLabel(nodeId: string): string {
+  return topology.byId.get(nodeId)?.label ?? nodeId;
+}
+
+function observableCompromiseFraction(view: PresentationView): number {
+  const nodes = Object.values(view.nodes);
+  if (nodes.length === 0) return 0;
+  const compromised = nodes.filter(
+    (node) => node.visibleState === 'infected' || node.visibleState === 'encrypted',
+  ).length;
+  return compromised / nodes.length;
+}
+
+function observedThreatSummary(view: PresentationView): string {
+  const nodes = Object.values(view.nodes);
+  const infected = nodes.filter((node) => node.visibleState === 'infected');
+  const encrypted = nodes.filter((node) => node.visibleState === 'encrypted');
+  const uncertain = nodes.filter((node) => !node.observed).length;
+  const urgent = infected.filter((node) => (node.turnsToEncryption ?? Number.POSITIVE_INFINITY) <= 1)
+    .length;
+
+  if (state.status === 'lost') {
+    return state.lossReason === 'domain-controller'
+      ? 'Domain Controller encrypted. Incident command lost.'
+      : 'Estate loss threshold reached.';
+  }
+  if (state.phase === 'recovery') {
+    return encrypted.length > 0
+      ? `Propagation stopped. ${encrypted.length} encrypted ${encrypted.length === 1 ? 'asset' : 'assets'} remain visible.`
+      : 'Propagation stopped. No encrypted assets remain visible.';
+  }
+  if (infected.length > 0) {
+    const urgency = urgent > 0
+      ? ` ${urgent} ${urgent === 1 ? 'asset is' : 'assets are'} one hour from encryption.`
+      : '';
+    return `${infected.length} observed ${infected.length === 1 ? 'infection' : 'infections'}.${urgency}`;
+  }
+  if (uncertain > 0) {
+    return `No infection visible. ${uncertain} ${uncertain === 1 ? 'asset remains' : 'assets remain'} outside verified coverage.`;
+  }
+  return 'Observed estate clear. Containment can be declared.';
 }
 
 // Headless verification hook: renders a burst of frames synchronously and
@@ -530,6 +959,9 @@ declare global {
       visibleView: () => Record<string, VisibleState>;
       act: (kind: ActionKind, node?: string) => { ok: boolean; reason?: string };
       endTurnInstant: (n: number) => void;
+      visualProof?: () => Record<string, string>;
+      playEffectProof?: (kind: ActionKind, node?: string) => boolean;
+      effectProofState?: () => Record<ActionKind, boolean>;
       /** The log length and the built review, for verifying findings match events. */
       logLength: () => number;
       pir: () => ReturnType<typeof buildPir>;
@@ -545,6 +977,7 @@ window.__spikeBench = (benchFrames = 120) => {
     // (pulse, transitions, flashes), the shake sample, and the render. This is
     // the honest frame cost, not just the draw call.
     board.tick(now / 1000);
+    actionEffects.tick(now / 1000);
     tickMaterials(now / 1000);
     context.tickAtmosphere(now / 1000);
     const offset = shake.step(0.016);
@@ -580,20 +1013,24 @@ window.__sim = {
   visibleView: () => ({ ...currentView }),
   act(kind, node) {
     const result = applyPlayerAction(state, { kind, node }, topology);
-    if (result.ok) recorder.record(state.turn, result.events);
+    if (result.ok) {
+      recorder.record(state.turn, result.events);
+      const applied = result.events.find(
+        (event) => event.kind === 'action' && event.outcome === 'applied',
+      );
+      if (applied?.kind === 'action') actionEffects.play(applied.action, applied.node);
+    }
     state = result.state;
     renderState();
     return { ok: result.ok, reason: result.reason };
   },
   endTurnInstant(n: number) {
+    director.interrupt();
     for (let i = 0; i < n && state.status === 'playing'; i += 1) {
-      const turnNow = state.turn;
-      const resolved = endTurn(state, topology);
-      recorder.record(turnNow, resolved.events);
-      state = resolved.nextState;
-      recorder.tickDowntime(state);
+      const before = state;
+      const beforePresentation = toPresentationView(before, topology);
+      resolveHourly(before, beforePresentation, endTurn(before, topology), true);
     }
-    renderState();
   },
   logLength: () => recorder.log.length,
   pir: () =>
@@ -609,3 +1046,98 @@ window.__sim = {
       topology,
     ),
 };
+
+// Explicit visual-verification surface. Development builds expose public
+// presentation fixtures and pooled action effects without mutating true game
+// state. The production build omits both methods unless ?debug=1 is explicit.
+if (
+  params.get('debug') === '1' ||
+  window.location.hostname === '127.0.0.1' ||
+  window.location.hostname === 'localhost'
+) {
+  window.__sim.visualProof = () => {
+    const required = [
+      'DC-01',
+      'FIN-SW',
+      'SRV-MAIL',
+      'SRV-SQL',
+      'SRV-APP',
+      'SRV-WEB',
+      'SRV-FILE',
+    ];
+    for (const nodeId of required) {
+      if (!currentPresentation.nodes[nodeId]) {
+        throw new Error(`visual proof fixture requires ${nodeId}`);
+      }
+    }
+    const nodes: Record<string, NodePresentationState> = Object.fromEntries(
+      Object.entries(currentPresentation.nodes).map(
+        ([id, node]): [string, NodePresentationState] => [
+          id,
+          {
+            ...node,
+            visibleState: 'clean',
+            observed: true,
+            isolated: false,
+            turnsToEncryption: undefined,
+          },
+        ],
+      ),
+    );
+    nodes['DC-01'] = { ...nodes['DC-01'], visibleState: 'clean', observed: true };
+    nodes['FIN-SW'] = {
+      ...nodes['FIN-SW'],
+      visibleState: 'clean',
+      observed: false,
+      edr: false,
+    };
+    nodes['SRV-MAIL'] = {
+      ...nodes['SRV-MAIL'],
+      visibleState: 'infected',
+      observed: true,
+      turnsToEncryption: 2,
+    };
+    nodes['SRV-SQL'] = {
+      ...nodes['SRV-SQL'],
+      visibleState: 'encrypted',
+      observed: true,
+      turnsToEncryption: undefined,
+    };
+    nodes['SRV-APP'] = {
+      ...nodes['SRV-APP'],
+      visibleState: 'patched',
+      observed: true,
+      turnsToEncryption: undefined,
+    };
+    nodes['SRV-WEB'] = {
+      ...nodes['SRV-WEB'],
+      visibleState: 'clean',
+      observed: true,
+      isolated: true,
+    };
+    nodes['SRV-FILE'] = {
+      ...nodes['SRV-FILE'],
+      visibleState: 'clean',
+      observed: true,
+    };
+    renderPresentation({ nodes }, { allowTerminal: false });
+    select('SRV-FILE');
+    return {
+      clean: 'DC-01',
+      unknown: 'FIN-SW',
+      infected: 'SRV-MAIL',
+      encrypted: 'SRV-SQL',
+      patched: 'SRV-APP',
+      isolated: 'SRV-WEB',
+      selected: 'SRV-FILE',
+    };
+  };
+  window.__sim.playEffectProof = (kind, node) => actionEffects.play(kind, node);
+  window.__sim.effectProofState = () => Object.fromEntries(
+    (['scan', 'isolate', 'reconnect', 'patch', 'restore', 'emergency'] as ActionKind[])
+      .map((kind) => [
+        kind,
+        actionEffects.group.getObjectByName(`action-effect-${kind}`)?.visible === true,
+      ]),
+  ) as Record<ActionKind, boolean>;
+}

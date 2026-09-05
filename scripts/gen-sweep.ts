@@ -3,7 +3,8 @@
 // generates a fresh estate and runs the undefended baseline plus both bots on
 // it, then reports the aggregate next to the hand-authored MERIDIAN numbers.
 //
-// The gate: greedy must hold 40-70% and random must stay above 15% on the
+// The gate: greedy sub-reportable containment must hold 45-70% and random
+// survival must hold 15-30% on the
 // procedural boards. If it fails, tighten the GENERATOR (config.extraEdges,
 // coverage, ranges), never the economy. Run with: npm run gen [runs]
 
@@ -32,9 +33,15 @@ function isConnected(t: Topology): boolean {
   return seen.size === t.nodes.length;
 }
 
-function botWin(bot: Bot, topology: Topology, seed: string): { won: boolean; blast: number; turns: number } {
+function botWin(bot: Bot, topology: Topology, seed: string): { won: boolean; subReportable: boolean; blast: number; turns: number; pressure: number } {
   const o = runBot(topology, seed, bot, SIM_CONFIG);
-  return { won: o.status === 'won', blast: o.blastRadius, turns: o.turns };
+  return {
+    won: o.status === 'won',
+    subReportable: o.status === 'won' && o.blastRadius < 0.25,
+    blast: o.blastRadius,
+    turns: o.turns,
+    pressure: o.maxPressure,
+  };
 }
 
 interface Agg {
@@ -42,8 +49,10 @@ interface Agg {
   undefTurns: number[];
   randomWins: number;
   greedyWins: number;
+  greedySubReportable: number;
   greedyBlast: number[];
   greedyTurns: number[];
+  greedyHighPressure: number;
   disconnected: number;
   badCount: number;
   extraEdges: number[];
@@ -53,7 +62,7 @@ interface Agg {
 function sweep(label: string, boardFor: (i: number) => Topology): Agg {
   const a: Agg = {
     undefReached: 0, undefTurns: [], randomWins: 0, greedyWins: 0,
-    greedyBlast: [], greedyTurns: [], disconnected: 0, badCount: 0,
+    greedyBlast: [], greedyTurns: [], greedyHighPressure: 0, greedySubReportable: 0, disconnected: 0, badCount: 0,
     extraEdges: [], maxDegree: [],
   };
   for (let i = 0; i < RUNS; i += 1) {
@@ -69,8 +78,10 @@ function sweep(label: string, boardFor: (i: number) => Topology): Agg {
     if (botWin(randomBot, topology, seed).won) a.randomWins += 1;
     const g = botWin(greedyBot, topology, seed);
     if (g.won) a.greedyWins += 1;
+    if (g.subReportable) a.greedySubReportable += 1;
     a.greedyBlast.push(g.blast);
     a.greedyTurns.push(g.turns);
+    if (g.pressure >= SIM_CONFIG.pressureMax * 0.8) a.greedyHighPressure += 1;
   }
   return a;
 }
@@ -82,7 +93,7 @@ function report(label: string, a: Agg): void {
   console.log(
     `${label.padEnd(18)} | undef ${pct(a.undefReached).padStart(4)} @ ${mean(a.undefTurns).toFixed(1).padStart(4)}t` +
       ` | random ${pct(a.randomWins).padStart(4)}` +
-      ` | greedy ${pct(a.greedyWins).padStart(4)} @ ${mean(a.greedyTurns).toFixed(1).padStart(4)}t blast ${(mean(a.greedyBlast) * 100).toFixed(0).padStart(3)}%`,
+      ` | greedy raw ${pct(a.greedyWins).padStart(4)} sub-reportable ${pct(a.greedySubReportable).padStart(4)} @ ${mean(a.greedyTurns).toFixed(1).padStart(4)}t blast ${(mean(a.greedyBlast) * 100).toFixed(0).padStart(3)}% pressure ${pct(a.greedyHighPressure).padStart(4)}`,
   );
   console.log(
     `${' '.repeat(18)} | structure: extra edges ${mean(a.extraEdges).toFixed(1)} (max degree ${mean(a.maxDegree).toFixed(1)})` +
@@ -92,7 +103,7 @@ function report(label: string, a: Agg): void {
 
 const meridian = loadTopology();
 
-console.log(`\nPhase 4 balance gate: ${RUNS} games each. Gate: greedy 40-70%, random > 15%.\n`);
+console.log(`\nProcedural balance gate: ${RUNS} games each. Gate: greedy sub-reportable 45-70%, random 15-30%.\n`);
 report('HAND-AUTHORED', sweep('meridian', () => meridian));
 report('PROCEDURAL', sweep('gen', (i) => generateTopology(`gen-${i}`)));
 

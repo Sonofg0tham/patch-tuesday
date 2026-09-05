@@ -6,7 +6,7 @@
 
 import type { ActionKind } from '../sim/types';
 
-interface ActionDef {
+export interface ActionDef {
   kind: ActionKind;
   label: string;
   hotkey: string; // single lower-case key
@@ -14,7 +14,7 @@ interface ActionDef {
   needsNode: boolean;
 }
 
-const ACTIONS: ActionDef[] = [
+export const ACTION_CATALOGUE: readonly ActionDef[] = [
   { kind: 'scan', label: 'Deploy sensor', hotkey: 's', cost: '1', needsNode: true },
   { kind: 'isolate', label: 'Isolate', hotkey: 'i', cost: '1', needsNode: true },
   { kind: 'reconnect', label: 'Reconnect', hotkey: 'c', cost: '1', needsNode: true },
@@ -22,6 +22,11 @@ const ACTIONS: ActionDef[] = [
   { kind: 'restore', label: 'Restore', hotkey: 'r', cost: '2', needsNode: true },
   { kind: 'emergency', label: 'Emergency budget', hotkey: 'e', cost: '+2 AP', needsNode: false },
 ];
+
+export function actionForHotkey(key: string, enabled: boolean): ActionKind | null {
+  if (!enabled) return null;
+  return ACTION_CATALOGUE.find((action) => action.hotkey === key.toLowerCase())?.kind ?? null;
+}
 
 export interface ActionBar {
   setAp(ap: number, perTurn: number): void;
@@ -34,6 +39,8 @@ export interface ActionBar {
 export interface ActionHandlers {
   /** Fired when an action is invoked; returns nothing, the app applies it. */
   onAction(kind: ActionKind): void;
+  /** Focus and hover preview public consequences without invoking the action. */
+  onPreview(kind: ActionKind | null): void;
 }
 
 export function createActionBar(container: HTMLElement, handlers: ActionHandlers): ActionBar {
@@ -42,8 +49,9 @@ export function createActionBar(container: HTMLElement, handlers: ActionHandlers
   const scoreEl = mustFind('hud-score');
   const reasonEl = mustFind('action-reason');
   const buttons: HTMLButtonElement[] = [];
+  let hotkeysEnabled = true;
 
-  for (const def of ACTIONS) {
+  for (const def of ACTION_CATALOGUE) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'action-button';
@@ -55,11 +63,15 @@ export function createActionBar(container: HTMLElement, handlers: ActionHandlers
 
     const meta = document.createElement('span');
     meta.className = 'action-meta';
-    meta.textContent = `${def.cost} · ${def.hotkey.toUpperCase()}`;
+    meta.textContent = `${def.cost}${def.kind === 'emergency' ? '' : ' AP'} · ${def.hotkey.toUpperCase()}`;
 
     button.append(name, meta);
     button.setAttribute('aria-keyshortcuts', def.hotkey);
     button.addEventListener('click', () => handlers.onAction(def.kind));
+    button.addEventListener('pointerenter', () => handlers.onPreview(def.kind));
+    button.addEventListener('pointerleave', () => handlers.onPreview(null));
+    button.addEventListener('focus', () => handlers.onPreview(def.kind));
+    button.addEventListener('blur', () => handlers.onPreview(null));
     buttons.push(button);
     container.appendChild(button);
   }
@@ -69,11 +81,16 @@ export function createActionBar(container: HTMLElement, handlers: ActionHandlers
   window.addEventListener('keydown', (event) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const active = document.activeElement;
-    if (active instanceof HTMLElement && ['INPUT', 'TEXTAREA'].includes(active.tagName)) return;
-    const def = ACTIONS.find((a) => a.hotkey === event.key.toLowerCase());
-    if (!def) return;
+    if (
+      active instanceof HTMLElement &&
+      (['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName) || active.isContentEditable)
+    ) {
+      return;
+    }
+    const kind = actionForHotkey(event.key, hotkeysEnabled);
+    if (kind === null) return;
     event.preventDefault();
-    handlers.onAction(def.kind);
+    handlers.onAction(kind);
   });
 
   return {
@@ -90,8 +107,11 @@ export function createActionBar(container: HTMLElement, handlers: ActionHandlers
       reasonEl.textContent = text;
       reasonEl.className = text ? (ok ? 'ok' : 'blocked') : '';
     },
-    setEnabled(enabled) {
-      for (const button of buttons) button.disabled = !enabled;
+    setEnabled(nextEnabled) {
+      for (const button of buttons) button.disabled = !nextEnabled;
+      // The global keyboard path must be locked with the visible controls.
+      // A disabled button alone does not stop a window key listener.
+      hotkeysEnabled = nextEnabled;
     },
   };
 }

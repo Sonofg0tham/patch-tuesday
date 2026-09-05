@@ -16,7 +16,7 @@
 // because nothing is watching it.
 
 import type { Topology } from '../data/topology';
-import type { GameState, VisibleState } from './types';
+import type { PresentationView } from './telemetry';
 
 export interface ForecastEdge {
   /** The visibly infected node the threat would come from. */
@@ -33,10 +33,11 @@ export interface Forecast {
 }
 
 /**
- * Mirrors the spread rules in stepTurn() exactly, but from the visible view:
- * a visibly infected node spreads along a live cable to an apparently clean
- * neighbour. Encrypted nodes are excluded because an encrypted node has stopped
- * spreading, and patched ones because they cannot be infected.
+ * Shows every visible route that could spread next turn, rather than the secret
+ * seeded schedule used by stepTurn(). A visibly infected node can reach an
+ * apparently clean neighbour along a live cable. Encrypted nodes are excluded
+ * because an encrypted node has stopped spreading, and patched ones because
+ * they cannot be infected.
  *
  * A node that merely looks clean but is secretly already infected will be
  * marked at risk. That over-report is harmless (the player cannot tell either
@@ -44,21 +45,22 @@ export interface Forecast {
  * the forecast leaking the fog.
  */
 export function forecastSpread(
-  view: Record<string, VisibleState>,
-  state: GameState,
+  view: PresentationView,
   topology: Topology,
 ): Forecast {
   const edges: ForecastEdge[] = [];
   const atRisk = new Set<string>();
 
   for (const node of topology.nodes) {
-    if (view[node.id] !== 'infected') continue;
+    const source = view.nodes[node.id];
+    if (source?.visibleState !== 'infected') continue;
     // An isolated node's cables are cut, in both directions.
-    if (state.nodes[node.id]?.isolated) continue;
+    if (source.isolated) continue;
 
     for (const neighbourId of node.neighbours) {
-      if (state.nodes[neighbourId]?.isolated) continue;
-      if (view[neighbourId] !== 'clean') continue;
+      const target = view.nodes[neighbourId];
+      if (target?.isolated) continue;
+      if (target?.visibleState !== 'clean') continue;
       edges.push({ source: node.id, target: neighbourId });
       atRisk.add(neighbourId);
     }

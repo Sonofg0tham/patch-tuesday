@@ -1,0 +1,13 @@
+:root {
+  --brand-background: 220 29% 6%;
+  --brand-foreground: 215 20% 81%;
+  --brand-accent: 194 85% 62%;
+  --brand-threat: 333 93% 56%;
+  --brand-pressure: 38 91% 55%;
+  --brand-border: 194 52% 38%;
+  --brand-muted: 204 18% 65%;
+
+  --brand-radius-none: 0;
+  --brand-radius-sm: 0.125rem;
+  --brand-radius-md: 0.25rem;
+}

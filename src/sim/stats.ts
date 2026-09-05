@@ -25,6 +25,8 @@ export interface StatsResult {
   /** Turns-to-threshold for the runs that reached it. */
   samples: number[];
   reached: number;
+  /** Fraction of undefended runs that reach the configured loss threshold. */
+  lossRate: number;
   /** Runs where the worm died out below the threshold. */
   fizzled: number;
   fizzleRate: number;
@@ -49,6 +51,7 @@ export function runToThreshold(
   config: SimConfig = SIM_CONFIG,
 ): number | null {
   let state = createInitialState(topology, seed, config);
+  if (blastRadius(state) >= threshold) return 0;
   for (let step = 1; step <= maxTurns; step += 1) {
     state = stepTurn(state, topology, config).nextState;
     if (blastRadius(state) >= threshold) return step;
@@ -80,6 +83,7 @@ export function runSpreadStats(topology: Topology, options: StatsOptions): Stats
     threshold,
     samples,
     reached: samples.length,
+    lossRate: runs === 0 ? 0 : samples.length / runs,
     fizzled,
     fizzleRate: runs === 0 ? 0 : fizzled / runs,
     mean: samples.length === 0 ? 0 : samples.reduce((a, b) => a + b, 0) / samples.length,

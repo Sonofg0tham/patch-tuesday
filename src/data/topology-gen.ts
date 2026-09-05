@@ -38,6 +38,7 @@ interface GenNode {
   id: string;
   type: NodeType;
   role: string;
+  segment: string;
   edr: boolean;
   col: number;
   row: number;
@@ -98,23 +99,23 @@ export function generateTopology(seed: string, config: TopoGenConfig = GEN_CONFI
 
   // Core hub, centred.
   const coreId = 'CORE-RTR';
-  nodes.push({ id: coreId, type: 'router', role: 'Core switch', edr: true, col: Math.floor(totalCols / 2), row: ROW_CORE });
+  nodes.push({ id: coreId, type: 'router', role: 'Core switch', segment: 'CORE', edr: true, col: Math.floor(totalCols / 2), row: ROW_CORE });
 
   // Infrastructure across the top: DC, servers, backup. All hang off the core.
   // Covered by default, like the hand-authored board.
   let topCol = topOffset;
   const dcId = 'DC-01';
-  nodes.push({ id: dcId, type: 'domain-controller', role: 'Active Directory domain controller', edr: true, col: topCol, row: ROW_INFRA });
+  nodes.push({ id: dcId, type: 'domain-controller', role: 'Active Directory domain controller', segment: 'CORE', edr: true, col: topCol, row: ROW_INFRA });
   cables.push([coreId, dcId]);
   topCol += 1;
   for (const [tag, role] of serverRoles) {
     const id = `SRV-${tag}`;
-    nodes.push({ id, type: 'server', role, edr: true, col: topCol, row: ROW_INFRA });
+    nodes.push({ id, type: 'server', role, segment: 'CORE', edr: true, col: topCol, row: ROW_INFRA });
     cables.push([coreId, id]);
     topCol += 1;
   }
   const backupId = 'BACKUP-01';
-  nodes.push({ id: backupId, type: 'backup', role: 'Backup repository', edr: true, col: topCol, row: ROW_INFRA });
+  nodes.push({ id: backupId, type: 'backup', role: 'Backup repository', segment: 'CORE', edr: true, col: topCol, row: ROW_INFRA });
   cables.push([coreId, backupId]);
 
   // Segments: a switch off the core, workstations off the switch. One whole
@@ -128,7 +129,7 @@ export function generateTopology(seed: string, config: TopoGenConfig = GEN_CONFI
     const dept = departments[s];
     const baseCol = segOffset + s * (SEG_WIDTH + 1);
     const swId = `${dept}-SW`;
-    nodes.push({ id: swId, type: 'router', role: `${dept} segment switch`, edr: false, col: baseCol + Math.floor(SEG_WIDTH / 2), row: ROW_SWITCH });
+    nodes.push({ id: swId, type: 'router', role: `${dept} segment switch`, segment: dept, edr: false, col: baseCol + Math.floor(SEG_WIDTH / 2), row: ROW_SWITCH });
     cables.push([coreId, swId]);
     switchIds.push(swId);
 
@@ -139,6 +140,7 @@ export function generateTopology(seed: string, config: TopoGenConfig = GEN_CONFI
         id,
         type: 'workstation',
         role: `${dept} workstation`,
+        segment: dept,
         edr: false, // coverage assigned below
         col: baseCol + (k % SEG_WIDTH),
         row: ROW_WS + Math.floor(k / SEG_WIDTH),
@@ -199,6 +201,7 @@ export function generateTopology(seed: string, config: TopoGenConfig = GEN_CONFI
     label: n.id,
     type: n.type,
     role: n.role,
+    segment: n.segment,
     col: n.col,
     row: n.row,
     edr: n.edr,

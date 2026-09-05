@@ -17,7 +17,7 @@ function withDwell(n: number): SimConfig {
   return { ...SIM_CONFIG, dwellTurns: n };
 }
 
-function botWinRate(bot: Bot, config: SimConfig): { winPct: number; avgTurns: number; avgBlast: number } {
+function botWinRate(bot: Bot, config: SimConfig): { winPct: number; avgTurns: number; avgBlast: number; highPressurePct: number } {
   const outcomes: BotOutcome[] = [];
   for (let i = 0; i < RUNS; i += 1) outcomes.push(runBot(topology, `bot-${i}`, bot, config));
   const wins = outcomes.filter((o) => o.status === 'won').length;
@@ -27,6 +27,7 @@ function botWinRate(bot: Bot, config: SimConfig): { winPct: number; avgTurns: nu
     winPct: (wins / RUNS) * 100,
     avgTurns: mean((o) => o.turns),
     avgBlast: mean((o) => o.blastRadius) * 100,
+    highPressurePct: (outcomes.filter((o) => o.maxPressure >= config.pressureMax * 0.8).length / RUNS) * 100,
   };
 }
 
@@ -37,7 +38,7 @@ console.log('Nothing tuned but dwellTurns. N=0 is the Phase 3 reference (lone pa
 
 console.log(
   `${pad('N', 2)} | ${pad('undef reach60%', 14)} ${pad('undef turns', 11)} ${pad('undef fizzle%', 13)} |` +
-    ` ${pad('random win%', 11)} ${pad('r.turns', 7)} | ${pad('greedy win%', 11)} ${pad('g.turns', 7)} ${pad('g.blast%', 8)}`,
+    ` ${pad('random win%', 11)} ${pad('r.turns', 7)} | ${pad('greedy win%', 11)} ${pad('g.turns', 7)} ${pad('g.blast%', 8)} ${pad('g.pressure%', 11)}`,
 );
 console.log('-'.repeat(120));
 
@@ -55,7 +56,7 @@ for (const n of DWELLS) {
   console.log(
     `${pad(n, 2)} | ${pad(`${Math.round((undef.reached / RUNS) * 100)}%`, 14)} ${pad(undef.mean.toFixed(1), 11)} ${pad(`${Math.round(undef.fizzleRate * 100)}%`, 13)} |` +
       ` ${pad(`${random.winPct.toFixed(0)}%`, 11)} ${pad(random.avgTurns.toFixed(1), 7)} |` +
-      ` ${pad(`${greedy.winPct.toFixed(0)}%`, 11)} ${pad(greedy.avgTurns.toFixed(1), 7)} ${pad(`${greedy.avgBlast.toFixed(0)}%`, 8)}`,
+      ` ${pad(`${greedy.winPct.toFixed(0)}%`, 11)} ${pad(greedy.avgTurns.toFixed(1), 7)} ${pad(`${greedy.avgBlast.toFixed(0)}%`, 8)} ${pad(`${greedy.highPressurePct.toFixed(0)}%`, 11)}`,
   );
 }
 
