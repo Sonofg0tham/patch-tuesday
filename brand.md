@@ -26,6 +26,8 @@ Layout: a compact top status strip, one right-hand inspector with a plain-Englis
 
 Voice: explain the player's job before the incident jargon. Name an inspectable machine and explain what an action does, what it costs and what it cannot fix. Keep How do I win? available during play.
 
+Sound: a restrained procedural score of bass pulses, short keys and soft percussion. Three eight-bar passages vary melody and harmony at 84 BPM. Recovery removes the heavier rhythm and changes the harmony. No continuous sweeping pad or high-pressure tritone drone; machinery ambience sits beneath the music.
+
 Accessibility pairing: border and muted tokens are approved on the base background at HSL 220 29% 6%. Recheck contrast before using either on a different surface.
 
 Reserved for this product. Not sonofg0tham. Not any other product Craig has built.

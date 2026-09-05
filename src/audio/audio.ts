@@ -67,6 +67,8 @@ export interface Audio {
   setBlastIntensity(fraction: number): void;
   /** Business pressure 0..1: an escalating low undertone. */
   setPressure(fraction: number): void;
+  /** Public recovery phase, so the score can release tension without ending. */
+  setRecovery(value: boolean): void;
   /** The run ended: the score plays its verdict and stops adapting. */
   resolve(outcome: Outcome): void;
   /** File-swap escape hatch: play this buffer for the name instead of the synth. */
@@ -102,6 +104,7 @@ export function createAudio(): Audio {
   // because a board that is contained but screaming at you is still tense.
   let blastLevel = 0;
   let pressureLevel = 0;
+  let recovering = false;
   function pushIntensity(): void {
     music?.setIntensity(Math.min(1, blastLevel * 1.35 + pressureLevel * 0.35));
   }
@@ -139,6 +142,8 @@ export function createAudio(): Audio {
 
     music = createMusic(ctx, musicBus, reverb.input);
     music.setVolume(musicLevel);
+    music.setRecovery(recovering);
+    pushIntensity();
     music.start();
 
     ambience = createAmbience(ctx, sfxBus, reverb.input);
@@ -199,6 +204,10 @@ export function createAudio(): Audio {
       pressureLevel = Math.max(0, Math.min(1, fraction));
       ambience?.setPressure(pressureLevel);
       pushIntensity();
+    },
+    setRecovery(value) {
+      recovering = value;
+      music?.setRecovery(value);
     },
     resolve(outcome) {
       music?.resolve(outcome);
@@ -407,7 +416,7 @@ interface Ambience {
 
 function createAmbience(ctx: AudioContext, out: AudioNode, reverbSend: AudioNode): Ambience {
   const bed = ctx.createGain();
-  bed.gain.value = 0.5;
+  bed.gain.value = 0.22;
   bed.connect(out);
 
   // Low room tone: two detuned sub sines plus a filtered noise floor.
@@ -417,7 +426,7 @@ function createAmbience(ctx: AudioContext, out: AudioNode, reverbSend: AudioNode
       osc.type = 'sine';
       osc.frequency.value = f;
       const g = ctx.createGain();
-      g.gain.value = 0.06;
+      g.gain.value = 0.015;
       osc.connect(g).connect(bed);
       osc.start();
     }
@@ -436,7 +445,7 @@ function createAmbience(ctx: AudioContext, out: AudioNode, reverbSend: AudioNode
   // The escalating undertone: a low oscillator whose gain and brightness climb
   // with business pressure, so the room feels the strain before the meter maxes.
   const pressureOsc = ctx.createOscillator();
-  pressureOsc.type = 'sawtooth';
+  pressureOsc.type = 'triangle';
   pressureOsc.frequency.value = 44;
   const pressureFilter = ctx.createBiquadFilter();
   pressureFilter.type = 'lowpass';
@@ -489,7 +498,7 @@ function createAmbience(ctx: AudioContext, out: AudioNode, reverbSend: AudioNode
     },
     setPressure(fraction) {
       const t = ctx.currentTime;
-      pressureGain.gain.setTargetAtTime(fraction * 0.12, t, 0.3);
+      pressureGain.gain.setTargetAtTime(fraction * 0.06, t, 0.3);
       pressureFilter.frequency.setTargetAtTime(120 + fraction * 500, t, 0.3);
     },
   };

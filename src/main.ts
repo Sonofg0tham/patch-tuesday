@@ -283,6 +283,7 @@ function renderHud(): void {
   const blast = observableCompromiseFraction(currentPresentation);
   board.setPressure(pressureFraction);
   audio.setPressure(pressureFraction);
+  audio.setRecovery(state.phase === 'recovery');
   audio.setBlastIntensity(blast);
   // The image itself sickens as the estate falls: the grade bleeds magenta into
   // the shadows, so a board in trouble is legible from the colour of the room
