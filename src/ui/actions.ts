@@ -63,7 +63,7 @@ export function createActionBar(container: HTMLElement, handlers: ActionHandlers
 
     const meta = document.createElement('span');
     meta.className = 'action-meta';
-    meta.textContent = `${def.cost} · ${def.hotkey.toUpperCase()}`;
+    meta.textContent = `${def.cost}${def.kind === 'emergency' ? '' : ' AP'} · ${def.hotkey.toUpperCase()}`;
 
     button.append(name, meta);
     button.setAttribute('aria-keyshortcuts', def.hotkey);

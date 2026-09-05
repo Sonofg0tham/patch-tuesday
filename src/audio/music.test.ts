@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GATES, layerLevel, planStep } from './music';
+import { GATES, layerLevel, planStep, SCORE } from './music';
 
 // WebAudio is browser-only, so the synthesis itself cannot be exercised here.
 // The arrangement can: planStep() is the pure decision layer that says which
@@ -7,15 +7,12 @@ import { GATES, layerLevel, planStep } from './music';
 // the part that carries the design intent ("the score is a readout of the
 // board"), so it is the part worth guarding.
 describe('the adaptive score arrangement', () => {
-  it('plays nothing but the continuous layers on a calm board', () => {
-    // Below every trigger gate, the drone and pad hold the room on their own.
-    for (let step = 0; step < 64; step += 1) {
-      const plan = planStep(step, 0);
-      expect(plan.clock).toBeUndefined();
-      expect(plan.pluck).toBeUndefined();
-      expect(plan.kick).toBeUndefined();
-      expect(plan.metal).toBeUndefined();
-    }
+  it('has melody and bass from the start, with rests instead of a constant drone', () => {
+    const bar = Array.from({ length: 16 }, (_, step) => planStep(step, 0));
+    expect(bar.some((plan) => plan.bass)).toBe(true);
+    expect(bar.some((plan) => plan.pluck)).toBe(true);
+    expect(bar.some((plan) => !plan.bass && !plan.pluck && !plan.harmony && !plan.kick)).toBe(true);
+    expect(bar.every((plan) => !plan.metal && !plan.clock)).toBe(true);
   });
 
   it('brings each layer in at its own gate, in escalating order', () => {
@@ -24,12 +21,13 @@ describe('the adaptive score arrangement', () => {
 
     const calm = barOfSteps(GATES.clock + 0.05);
     expect(calm.some((p) => p.clock)).toBe(true);
-    expect(calm.some((p) => p.pluck)).toBe(false);
-    expect(calm.some((p) => p.kick)).toBe(false);
+    expect(calm.some((p) => p.pluck)).toBe(true);
+    expect(calm.some((p) => p.metal)).toBe(false);
 
     const worrying = barOfSteps(GATES.arp + 0.05);
     expect(worrying.some((p) => p.pluck)).toBe(true);
-    expect(worrying.some((p) => p.kick)).toBe(false);
+    expect(worrying[14].pluck).toBeDefined();
+    expect(worrying.some((p) => p.metal)).toBe(false);
 
     const bad = barOfSteps(GATES.percussion + 0.05);
     expect(bad.some((p) => p.kick)).toBe(true);
@@ -60,6 +58,22 @@ describe('the adaptive score arrangement', () => {
     expect(layerLevel(0.5, 0.55)).toBeCloseTo(0.2, 5);
     expect(layerLevel(0.5, 0.75)).toBe(1); // fully in
     expect(layerLevel(0.5, 1)).toBe(1); // and never louder than that
+  });
+
+  it('changes harmony and melody across all three passages and leaves a breathing bar', () => {
+    const sectionLength = SCORE.barsPerSection * SCORE.stepsPerBar;
+    const sections = [0, 1, 2].map((section) => Array.from({ length: sectionLength }, (_, step) => planStep(section * sectionLength + step, 0.5)));
+    expect(sections[0]).not.toEqual(sections[1]);
+    expect(sections[1]).not.toEqual(sections[2]);
+    expect(planStep(sectionLength * 3, 0.5)).toEqual(planStep(0, 0.5));
+    expect(sections[0].slice(-16).every((plan) => !plan.pluck && !plan.kick && !plan.metal)).toBe(true);
+  });
+
+  it('releases percussion during recovery even while encrypted assets remain visible', () => {
+    const recovery = Array.from({ length: 128 }, (_, step) => planStep(step, 1, true));
+    expect(recovery.every((plan) => !plan.kick && !plan.clock && !plan.metal)).toBe(true);
+    expect(recovery.some((plan) => plan.harmony)).toBe(true);
+    expect(recovery.some((plan) => plan.pluck)).toBe(true);
   });
 
   it('never lets a layer play at zero level once it has been triggered', () => {

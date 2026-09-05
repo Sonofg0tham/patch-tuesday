@@ -98,7 +98,7 @@ One page, Fira Code, generated from the actual run. The sibling of Tailgate's En
 
 ## Visual direction
 
-Low-poly procedural geometry only: server racks and workstation towers as clean boxed shapes, cables as glowing tubes, the whole board lit dramatically against near-black. Cyan versus magenta is the entire colour story: infrastructure and UI in cold cyan, infection creeping visibly along cables in hot magenta, encryption rendered as a node going dark with magenta edges. Unknown (unscanned, uncovered) nodes desaturated. Everything readable at a glance from the fixed camera.
+Low-poly procedural geometry only: an open miniature workplace with desks, monitors, chairs, rack frames and backup enclosures around the existing five equipment silhouettes. Neutral floors, muted desk surfaces and dark metal make the company recognisable. Cyan identifies interaction and defence, magenta is reserved for observable compromise, and amber indicates warnings. Unknown equipment remains desaturated, with identical displays for uncovered clean and infected machines. Keep cable routes, markers and the fixed-angle view readable.
 
 ## Audio direction
 
@@ -156,6 +156,16 @@ Done when: a still of the board is indistinguishable from a shipped indie tactic
 **Phase 8, Incident Command.** Reopen the measured pacing and win condition, then build the missing dramatic arc around the existing mechanics. Add containment declaration and recovery, a fog-safe event theatre, handover and live guidance, truthful state markers, action-specific procedural effects and sound, safe-area layout, PIR chronology fixes and production debug gating. Keep every visual and sound procedural.
 
 Done when: the new 4,000-seed balance gate passes, competent human runs land at 12-18 minutes, each decision explains its visible consequence, End Hour is tense without leaking fog, all shipped text scales remain usable, and browser playtesting confirms the full handover-to-PIR journey with a clean console.
+
+**Phase 9, the miniature company.** Craig authorised a presentation pass around the existing tactics and balance. Build an open procedural workplace from public topology segments, with batched furniture, readable screens and persistent offline, sensor and protection states. Use a compact status strip, one inspector, a bottom action tray and a keyboard-accessible asset register closed initially. Fit the camera to the unobstructed estate; retain manual pan and zoom without rotation or camera swoops. Preview affected equipment and cables through the existing public consequence model before an action spends resources. Anchor observed events to their equipment, reuse the turn director and synthesised audio, and preserve reduced-motion still cues.
+
+Craig's implementation feedback added a clarity requirement: the opening must explain the objective and turn loop, and a persistent next-step guide must name an inspectable machine and explain why an action could help. Keep How do I win? available. Suggestions use only public presentation data and never execute actions, spend AP or reveal hidden infection.
+
+Craig also authorised replacing the repetitive whining/whirring score during this phase. The Phase 9 score supersedes the Phase 7 continuous drone, pad and tritone arrangement: three eight-bar passages at 84 BPM use finite bass, keys and percussion notes, with breathing bars and a gentler public recovery arrangement. Machinery ambience is quieter. The music bus controls all instruments, including their reverb send. Existing master, music and effects settings remain the controls, with no external audio assets.
+
+Verification: hidden-state equivalence, mouse and keyboard selection, pan versus click, persistent action states, skipped resolution, recovery and the PIR. Review 1440px and 1024px layouts including maximum text size and high contrast, and check narrow-screen containment without adding touch gameplay. Measure real browser frame intervals on both estate types and all quality tiers. The integrated-graphics 60fps target needs integrated hardware evidence; high-end desktop results cannot establish it.
+
+Done when: the starting view reads as a workplace and equipment area, the five asset types remain identifiable, action previews show affected connections, offline state persists visibly, automated checks and preview CI pass, and Craig confirms that a full incident is clearer and more tangible. The handoff in `docs/phase-9/implementation-handoff.html` contains the screenshots, playing checklist and presentation-only tuning worksheet. Craig's enjoyment and integrated-hardware checks remain acceptance gates, not claims made by automated testing.
 
 ## v2 parking lot (do not build in v1)
 

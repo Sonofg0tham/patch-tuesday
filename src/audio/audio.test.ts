@@ -37,6 +37,7 @@ describe('audio module', () => {
       audio.setSfxVolume(0.9);
       audio.setBlastIntensity(0.7);
       audio.setPressure(0.3);
+      audio.setRecovery(true);
       audio.resolve('lost');
     }).not.toThrow();
   });

@@ -20,7 +20,7 @@ import type { NodeType } from '../data/topology';
 // Height of the top face of each type, so markers and labels can float a
 // consistent gap above whatever they sit on.
 const TOP_HEIGHT: Record<NodeType, number> = {
-  workstation: 0.85,
+  workstation: 1.7, // clears the miniature desk and monitor assembly
   server: 2.0,
   router: 0.62, // the puck is still lowest; this clears the aerial stubs
   backup: 1.4,

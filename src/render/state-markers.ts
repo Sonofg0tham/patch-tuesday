@@ -7,6 +7,7 @@ import { palette } from '../config/palette';
 import type { Topology, TopologyNode } from '../data/topology';
 import type { NodePresentationState, PresentationView } from '../sim/telemetry';
 import { nodeTopHeight } from './geometry';
+import { MotionPhaseClock } from './motion-clock';
 import {
   assetLabelTexture,
   markerGlyphTexture,
@@ -80,9 +81,8 @@ export function deriveMarkerState(
   };
 }
 
-/** A fixed scale under reduced motion, a restrained breath otherwise. */
-export function infectionPulseScale(elapsed: number, reducedMotion: boolean): number {
-  if (reducedMotion) return 1;
+/** Derives the restrained infection breath from an accumulated visual phase. */
+export function infectionPulseScale(elapsed: number): number {
   return 1.05 + Math.sin(elapsed * 5.2) * 0.05;
 }
 
@@ -132,10 +132,12 @@ export class StateMarkerLayer {
 
   private readonly records = new Map<string, MarkerRecord>();
   private readonly selectionLight = new THREE.PointLight(palette.accent, 0, 1.7, 2);
+  private readonly motionClock: MotionPhaseClock;
   private reducedMotion: boolean;
 
   constructor(topology: Topology, options: { reducedMotion?: boolean } = {}) {
     this.reducedMotion = options.reducedMotion ?? false;
+    this.motionClock = new MotionPhaseClock(this.reducedMotion);
     this.group.name = 'fog-safe-state-markers';
 
     for (const zone of deriveZoneStencilSpecs(topology)) {
@@ -295,8 +297,8 @@ export class StateMarkerLayer {
     }
   }
 
-  tick(elapsed: number): void {
-    const scale = infectionPulseScale(elapsed, this.reducedMotion);
+  tick(elapsed: number): number {
+    const scale = infectionPulseScale(this.motionClock.sample(elapsed, this.reducedMotion));
     for (const record of this.records.values()) {
       if (!record.infection.visible) continue;
       record.infection.scale.set(
@@ -305,15 +307,12 @@ export class StateMarkerLayer {
         1,
       );
     }
+    return scale;
   }
 
   setReducedMotion(enabled: boolean): void {
     if (this.reducedMotion === enabled) return;
     this.reducedMotion = enabled;
-    if (!enabled) return;
-    for (const record of this.records.values()) {
-      record.infection.scale.set(THREAT_PLATE_SIZE, THREAT_PLATE_SIZE, 1);
-    }
   }
 
   dispose(): void {
@@ -322,7 +321,7 @@ export class StateMarkerLayer {
     const textures = new Set<THREE.Texture>();
     this.group.traverse((object) => {
       if (!(object instanceof THREE.Mesh || object instanceof THREE.Sprite || object instanceof THREE.LineSegments)) return;
-      if ('geometry' in object && object.geometry instanceof THREE.BufferGeometry) {
+      if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) {
         geometries.add(object.geometry);
       }
       const materialList = Array.isArray(object.material) ? object.material : [object.material];

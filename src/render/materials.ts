@@ -17,6 +17,7 @@ import * as THREE from 'three';
 import { palette } from '../config/palette';
 import { VISUAL_CONFIG } from '../config/visual';
 import { effectiveVisibilityFloor, motionReduced } from '../data/settings';
+import { MotionPhaseClock } from './motion-clock';
 import { cableSurface, floorSurface, panelSurface, tiled } from './textures';
 
 // Uniform sets that need a clock ticked every frame.
@@ -28,15 +29,20 @@ import { cableSurface, floorSurface, panelSurface, tiled } from './textures';
 // stash it when three hands it over.
 const animated: Record<string, THREE.IUniform>[] = [];
 const uniformsByMaterial = new WeakMap<THREE.Material, Record<string, THREE.IUniform>>();
+const cableMotionClock = new MotionPhaseClock(motionReduced());
 
 /** Advances every flow animation. Called once per frame from the main loop. */
 export function tickMaterials(elapsed: number): void {
-  const animationTime = cableAnimationTime(elapsed, motionReduced());
+  const animationTime = cableAnimationTime(cableMotionClock, elapsed, motionReduced());
   for (const uniforms of animated) uniforms.uTime.value = animationTime;
 }
 
-export function cableAnimationTime(elapsed: number, reducedMotion: boolean): number {
-  return reducedMotion ? 0 : elapsed;
+export function cableAnimationTime(
+  clock: MotionPhaseClock,
+  elapsed: number,
+  reducedMotion: boolean,
+): number {
+  return clock.sample(elapsed, reducedMotion);
 }
 
 function capture(material: THREE.Material, uniforms: Record<string, THREE.IUniform>): void {

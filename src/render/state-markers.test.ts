@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import * as THREE from 'three';
+import { describe, expect, it, vi } from 'vitest';
 import { loadTopology } from '../data/topology';
 import { makeGameState, makeTopology } from '../sim/fixtures';
 import { toPresentationView, type NodePresentationState } from '../sim/telemetry';
@@ -6,6 +7,7 @@ import {
   deriveMarkerState,
   deriveZoneStencilSpecs,
   infectionPulseScale,
+  StateMarkerLayer,
 } from './state-markers';
 
 function presentation(
@@ -78,10 +80,35 @@ describe('fog-safe procedural state markers', () => {
     });
   });
 
-  it('holds infected cues still under reduced motion while normal motion can breathe', () => {
-    expect(infectionPulseScale(0, true)).toBe(1);
-    expect(infectionPulseScale(0.47, true)).toBe(1);
-    expect(infectionPulseScale(0, false)).not.toBe(infectionPulseScale(0.47, false));
+  it('derives a restrained pulse from the accumulated motion phase', () => {
+    expect(infectionPulseScale(0)).not.toBe(infectionPulseScale(0.47));
+  });
+
+  it('freezes and resumes an infected plate at the current pulse phase', () => {
+    const topology = makeTopology([{ id: 'NODE-A', edr: true }], []);
+    const layer = new StateMarkerLayer(topology);
+    layer.apply({
+      nodes: {
+        'NODE-A': presentation({ id: 'NODE-A', visibleState: 'infected' }),
+      },
+    }, null);
+    const plate = layer.group.getObjectByName('marker-infection-NODE-A') as THREE.Sprite;
+
+    layer.tick(0.37);
+    const beforePause = plate.scale.toArray();
+    layer.setReducedMotion(true);
+    expect(plate.scale.toArray()).toEqual(beforePause);
+    layer.tick(0.37);
+    expect(plate.scale.toArray()).toEqual(beforePause);
+    layer.tick(4.37);
+    expect(plate.scale.toArray()).toEqual(beforePause);
+
+    layer.setReducedMotion(false);
+    const beforeResume = plate.scale.toArray();
+    layer.tick(4.37);
+    expect(plate.scale.toArray()).toEqual(beforeResume);
+    layer.tick(4.42);
+    expect(plate.scale.toArray()).not.toEqual(beforeResume);
   });
 
   it('derives restrained floor zones from stable topology segments', () => {
@@ -91,5 +118,47 @@ describe('fog-safe procedural state markers', () => {
     expect(zones.map((zone) => zone.segment)).toEqual(['CORE', 'FIN', 'OPS']);
     expect(zones.every((zone) => zone.width > 0 && zone.depth > 0)).toBe(true);
     expect(zones.every((zone) => zone.label.length > 0)).toBe(true);
+  });
+
+  it('disposes only layer-owned resources and leaves shared Sprite geometry alone', () => {
+    const externalSprite = new THREE.Sprite();
+    const sharedSpriteGeometryDispose = vi.spyOn(externalSprite.geometry, 'dispose');
+    const layer = new StateMarkerLayer(
+      makeTopology([{ id: 'NODE-A', edr: true }], []),
+    );
+    const ownedGeometry = new Set<THREE.BufferGeometry>();
+    const ownedMaterial = new Set<THREE.Material>();
+    const ownedTexture = new Set<THREE.Texture>();
+    layer.group.traverse((object) => {
+      if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) {
+        ownedGeometry.add(object.geometry);
+      }
+      if (
+        !(
+          object instanceof THREE.Mesh
+          || object instanceof THREE.LineSegments
+          || object instanceof THREE.Sprite
+        )
+      ) {
+        return;
+      }
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      for (const material of materials) {
+        ownedMaterial.add(material);
+        if ('map' in material && material.map instanceof THREE.Texture) {
+          ownedTexture.add(material.map);
+        }
+      }
+    });
+    const geometryDispose = [...ownedGeometry].map((geometry) => vi.spyOn(geometry, 'dispose'));
+    const materialDispose = [...ownedMaterial].map((material) => vi.spyOn(material, 'dispose'));
+    const textureDispose = [...ownedTexture].map((texture) => vi.spyOn(texture, 'dispose'));
+
+    layer.dispose();
+
+    expect(sharedSpriteGeometryDispose).not.toHaveBeenCalled();
+    expect(geometryDispose.every((spy) => spy.mock.calls.length === 1)).toBe(true);
+    expect(materialDispose.every((spy) => spy.mock.calls.length === 1)).toBe(true);
+    expect(textureDispose.every((spy) => spy.mock.calls.length === 1)).toBe(true);
   });
 });

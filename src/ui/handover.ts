@@ -124,15 +124,18 @@ export function createHandover(
     const title = document.createElement('h1');
     title.id = 'handover-title';
     title.className = 'handover-title';
-    title.textContent = 'Command transfer required';
+    title.textContent = 'Stop the ransomware. Save the company.';
     const summary = document.createElement('p');
     summary.className = 'handover-summary';
-    summary.textContent = `${model.estate}. Accept the SOC handover before issuing commands.`;
+    summary.textContent = `${model.estate}. You are the incident lead. Select machines and spend ${model.apPerHour} action points each hour to stop the attack. Nothing moves until you choose End hour.`;
+    const goal = document.createElement('p');
+    goal.className = 'handover-summary';
+    goal.textContent = 'Cut infected machines off with Isolate. Use sensors to check blind spots, and Restore to remove infection. When the attack is gone, Declare containment, reconnect services and File review to win.';
     const accept = document.createElement('button');
     accept.type = 'button';
     accept.className = 'handover-accept';
     accept.textContent = 'Accept handover';
-    panel.append(eyebrow, title, summary, accept);
+    panel.append(eyebrow, title, summary, goal, accept);
     container.replaceChildren(panel);
 
     accept.addEventListener('click', () => {

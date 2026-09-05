@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { MapControls } from 'three/addons/controls/MapControls.js';
 import { palette } from '../config/palette';
 import { VISUAL_CONFIG } from '../config/visual';
+import { COMPANY } from '../config/company';
 import { effectiveVisibilityFloor, motionReduced } from '../data/settings';
 import type { Topology } from '../data/topology';
 import { MAX_NODE_HEIGHT } from './geometry';
@@ -33,6 +34,7 @@ export interface SceneContext {
   environment: THREE.Texture;
   /** Advances the dust drift. A no-op at reduced motion. */
   tickAtmosphere(elapsed: number): void;
+  fitEstate(): void;
 }
 
 export function createScene(topology: Topology): SceneContext {
@@ -123,8 +125,8 @@ export function createScene(topology: Topology): SceneContext {
   // glow from below, and a hemisphere fill lifts shadowed faces. The ambient
   // floor scales with the nystagmus visibility knob: darker and more cinematic
   // at 0, flatter and maximally legible at 1.
-  scene.add(new THREE.AmbientLight(palette.accent, 0.10 + 0.5 * floor));
-  scene.add(new THREE.HemisphereLight(palette.keyLight, palette.accent, 0.16 + 0.4 * floor));
+  scene.add(new THREE.AmbientLight(COMPANY.materials.paper, 0.10 + 0.5 * floor));
+  scene.add(new THREE.HemisphereLight(palette.keyLight, COMPANY.materials.edge, 0.16 + 0.4 * floor));
 
   // The domain controller is the crown of the board: a dedicated cyan point
   // light picks it out of the dark so the eye lands on the crown jewels first.
@@ -138,6 +140,7 @@ export function createScene(topology: Topology): SceneContext {
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), createGroundMaterial(environment));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
+  ground.position.y = -0.4;
   scene.add(ground);
 
   const dust = createDust(topology);
@@ -149,6 +152,7 @@ export function createScene(topology: Topology): SceneContext {
     camera,
     controls,
     environment,
+    fitEstate() { fitCameraToBoard(camera, controls, topology); },
     tickAtmosphere(elapsed) {
       dust?.tick(elapsed);
     },
@@ -220,23 +224,53 @@ function createDust(topology: Topology): { points: THREE.Points; tick(elapsed: n
 
 // Frames the camera so the whole estate is comfortably in view, from a fixed
 // tilt. The board is already centred on the origin by the loader.
-function fitCameraToBoard(
+export function fitCameraToBoard(
   camera: THREE.PerspectiveCamera,
   controls: MapControls,
   topology: Topology,
 ): void {
-  const radius = Math.hypot(topology.halfWidth, topology.halfDepth, MAX_NODE_HEIGHT);
-  const vFov = (camera.fov * Math.PI) / 180;
-  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
-  const distance = (radius / Math.sin(Math.min(vFov, hFov) / 2)) * 1.15;
-
+  // Project the actual model bounds, then reserve the measured DOM safe area.
+  // Using a bounding sphere left most of the screen empty on wide estates.
+  const area = boardSafeArea();
+  camera.clearViewOffset();
   controls.target.set(0, TARGET_HEIGHT, 0);
-  camera.position.copy(controls.target).addScaledVector(CAMERA_TILT, distance);
+  camera.position.copy(controls.target).addScaledVector(CAMERA_TILT, 40);
   camera.lookAt(controls.target);
+  camera.updateMatrixWorld();
+  const inverse = camera.matrixWorldInverse;
+  const tangent = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  let distance = 1;
+  for (const x of [-topology.halfWidth - 1.3, topology.halfWidth + 1.3]) {
+    for (const z of [-topology.halfDepth - 1.3, topology.halfDepth + 1.3]) {
+      for (const y of [-0.4, MAX_NODE_HEIGHT + 0.5]) {
+        const point = new THREE.Vector3(x, y, z).applyMatrix4(inverse);
+        const depthOffset = point.z + 40;
+        distance = Math.max(distance,
+          Math.abs(point.x) / (tangent * camera.aspect * area.width / window.innerWidth) + depthOffset,
+          Math.abs(point.y) / (tangent * area.height / window.innerHeight) + depthOffset);
+      }
+    }
+  }
+  distance *= COMPANY.fitPadding;
+  camera.position.copy(controls.target).addScaledVector(CAMERA_TILT, distance);
+  // Offset the projection without changing the fixed viewing angle.
+  camera.setViewOffset(window.innerWidth, window.innerHeight,
+    window.innerWidth / 2 - (area.left + area.width / 2),
+    window.innerHeight / 2 - (area.top + area.height / 2), window.innerWidth, window.innerHeight);
 
   controls.minDistance = distance * 0.45;
   controls.maxDistance = distance * 1.4;
   controls.update();
+}
+
+export function boardSafeArea(): { left: number; top: number; width: number; height: number } {
+  const header = document.getElementById('command-header')?.getBoundingClientRect();
+  const tray = document.getElementById('command-tray')?.getBoundingClientRect();
+  const inspector = document.getElementById('company-sidebar')?.getBoundingClientRect();
+  const top = (header?.bottom ?? 0) + 12;
+  const right = inspector && window.innerWidth >= 760 ? inspector.left - 12 : window.innerWidth - 12;
+  const bottom = (tray?.top ?? window.innerHeight) - 12;
+  return { left: 12, top, width: Math.max(120, right - 12), height: Math.max(120, bottom - top) };
 }
 
 // Keeps the pan target within the board plus a margin, so the estate stays on

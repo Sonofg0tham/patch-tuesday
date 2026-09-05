@@ -31,9 +31,9 @@ export function createOverlay(): Overlay {
     inspect(model) {
       if (model === null) {
         panel.classList.add('empty');
-        nameEl.textContent = 'No node selected';
+        nameEl.textContent = 'No equipment selected';
         typeEl.textContent = '';
-        roleEl.textContent = 'Click a node, or Tab through the asset register.';
+        roleEl.textContent = 'Select equipment on the board, or open the asset register. Hover an action to preview its effect.';
         edrEl.textContent = '';
         edrEl.className = 'inspect-edr';
         statusEl.textContent = '';
@@ -57,8 +57,9 @@ export function createOverlay(): Overlay {
       // Visible infection status, again words plus a class. Isolation is noted
       // in words (its board cue is the missing cables), with its age in hours so
       // the player can see how much business pressure it is building.
-      const isolationNote = model.isolated ? ` · ISOLATED (${model.isolationAge}h)` : '';
-      statusEl.textContent = `${model.consequences.statusText}${isolationNote}`;
+      const isolationNote = model.isolated ? ` · OFFLINE / ISOLATED (${model.isolationAge}h)` : '';
+      const countdown = model.consequences.knownEncryptionInHours === undefined ? '' : ` · encryption in ${model.consequences.knownEncryptionInHours}h`;
+      statusEl.textContent = `${model.consequences.statusText}${isolationNote}${countdown}`;
       statusEl.className = `inspect-status s-${model.visibleState}`;
 
       connEl.textContent = `Connections (${model.connectionLabels.length}): ${model.connectionLabels.join(', ')}`;
@@ -79,8 +80,8 @@ function consequenceText(model: ActionConsequence): string {
   const effects: string[] = [];
   if (model.apGain !== undefined) effects.push(`gain ${model.apGain} AP`);
   else effects.push(`spend ${model.apCost} AP`);
-  if (model.cutLinks !== undefined) effects.push(`cut ${model.cutLinks} live links`);
-  if (model.restoredLinks !== undefined) effects.push(`restore ${model.restoredLinks} links`);
+  if (model.cutLinks !== undefined) effects.push(`cut ${model.cutLinks} live ${model.cutLinks === 1 ? 'link' : 'links'}`);
+  if (model.restoredLinks !== undefined) effects.push(`restore ${model.restoredLinks} ${model.restoredLinks === 1 ? 'link' : 'links'}`);
   if (model.pressurePerHour !== undefined && model.pressurePerHour !== 0) {
     effects.push(`${signed(model.pressurePerHour)} pressure per hour`);
   }

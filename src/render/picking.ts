@@ -27,8 +27,9 @@ export function createPointerPicker(
   let downY = 0;
 
   function pick(clientX: number, clientY: number): string | null {
-    pointer.x = (clientX / window.innerWidth) * 2 - 1;
-    pointer.y = -(clientY / window.innerHeight) * 2 + 1;
+    const bounds = canvas.getBoundingClientRect();
+    pointer.x = ((clientX - bounds.left) / bounds.width) * 2 - 1;
+    pointer.y = -((clientY - bounds.top) / bounds.height) * 2 + 1;
     raycaster.setFromCamera(pointer, context.camera);
     const hit = raycaster.intersectObjects(board.nodeMeshes, false)[0];
     if (!hit) return null;
@@ -49,6 +50,7 @@ export function createPointerPicker(
   });
 
   canvas.addEventListener('pointerup', (event) => {
+    if (event.button !== 0) return;
     const moved = Math.hypot(event.clientX - downX, event.clientY - downY);
     if (moved > 4) return; // this was a pan, not a click
     handlers.onClick(pick(event.clientX, event.clientY));
