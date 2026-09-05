@@ -3,7 +3,7 @@
   --company-rule: #40565e;
   --company-muted: #a8b8bd;
   --company-gap: 12px;
-  --company-sidebar: clamp(240px, 23vw, 320px);
+  --company-sidebar: clamp(240px, calc(23vw * var(--ui-scale, 1)), 360px);
   --company-type: calc(12px * var(--ui-scale, 1));
 }
 
@@ -105,3 +105,4 @@ body.high-contrast { --company-rule: #9ec2cb; --company-muted: #d5e2e5; --compan
 #response-guide button { width: 100%; padding: 10px; border: 1px solid var(--accent); color: var(--accent); background: var(--company-surface); font: inherit; cursor: pointer; }
 #response-help { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--company-rule); }
 #response-help summary { cursor: pointer; font-size: calc(12px * var(--ui-scale)); }
+.company-tools { position: sticky; top: -14px; z-index: 2; background: var(--company-surface); padding: 8px 0; }

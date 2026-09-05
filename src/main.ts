@@ -117,6 +117,7 @@ const responseGuide = createResponseGuide(mustFind('company-sidebar'), (id) => {
   if (!canIssueLifecycleCommand()) return;
   if (!mustFind('roster').hidden) mustFind('register-toggle').click();
   select(id);
+  mustFind('inspector').scrollIntoView({ block: 'nearest', behavior: 'instant' });
 });
 const timeline = createTimeline(mustFind('timeline'));
 const rosterContainer = mustFind('roster');
